@@ -8,10 +8,19 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: build & test
-    runs-on: ubuntu-latest
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
 
@@ -20,16 +29,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Headless Chrome so the render/align e2e test runs (it skips otherwise).
+      # Headless Chrome for the render/align e2e (required in CI, see below).
       - uses: browser-actions/setup-chrome@v2
+        id: chrome
 
       - name: Verify formatting
+        if: matrix.os == 'ubuntu-latest'
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
-            echo "These files are not gofmt'd:"
-            echo "$unformatted"
-            exit 1
+            echo "These files are not gofmt'd:"; echo "$unformatted"; exit 1
           fi
 
       - name: Vet
@@ -38,20 +47,70 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Test
-        run: go test -race ./...
+      # FIGMA_MAP_E2E makes the e2e fail (not skip) if Chrome can't launch, so it
+      # can never silently no-op in CI. CHROME_PATH points chromedp at the
+      # action-installed binary.
+      # e2e is required on Linux (reliable CI Chrome); on macOS it runs if Chrome
+      # launches but won't block CI on runner Chrome quirks.
+      - name: Test (with e2e)
+        env:
+          FIGMA_MAP_E2E: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: go test -race -coverprofile=cover.out ./...
+
+      - name: Coverage summary
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          go tool cover -func=cover.out | tail -1
+          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=cover.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: go.mod tidy check
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          go mod tidy
+          git diff --exit-status go.mod go.sum || { echo "run 'go mod tidy'"; exit 1; }
 
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.10.1
+
+  vuln:
+    name: govulncheck (informational)
+    runs-on: ubuntu-latest
+    # Informational: stdlib CVEs land regularly and are fixed by Go patch
+    # releases, so this surfaces issues without gating merges on Go's timing.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  release-config:
+    name: goreleaser check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: check

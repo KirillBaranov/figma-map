@@ -1,6 +1,6 @@
 module github.com/kirillbaranov/figma-map
 
-go 1.26
+go 1.26.1
 
 require (
 	github.com/chromedp/chromedp v0.15.1

@@ -4,17 +4,26 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/kirillbaranov/figma-map/internal/figma"
 	"github.com/kirillbaranov/figma-map/internal/render"
 )
 
-// chromeAvailable reports whether headless Chrome can launch (skip e2e if not).
+// chromeAvailable reports whether headless Chrome can launch. Locally the e2e
+// skips if Chrome is missing; in CI (FIGMA_MAP_E2E set) a missing/broken Chrome
+// is a hard failure so the e2e can never silently no-op.
 func chromeAvailable(t *testing.T) bool {
 	t.Helper()
 	_, err := render.Screenshot(context.Background(), "about:blank", 100)
-	return err == nil
+	if err != nil {
+		if os.Getenv("FIGMA_MAP_E2E") != "" {
+			t.Fatalf("e2e required (FIGMA_MAP_E2E set) but headless Chrome failed: %v", err)
+		}
+		return false
+	}
+	return true
 }
 
 const e2eHTML = `<!doctype html><html><body style="margin:0">

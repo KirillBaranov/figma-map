@@ -7,6 +7,7 @@ package render
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -22,12 +23,17 @@ var (
 )
 
 // ensureBrowser returns a live shared browser context, (re)creating it if absent
-// or dead. Caller need not hold the lock.
+// or dead. Caller need not hold the lock. CHROME_PATH overrides the binary (used
+// in CI to point at the action-installed Chrome).
 func ensureBrowser() context.Context {
 	browserMu.Lock()
 	defer browserMu.Unlock()
 	if browserCtx == nil || browserCtx.Err() != nil {
-		alloc, _ := chromedp.NewExecAllocator(context.Background(), chromedp.DefaultExecAllocatorOptions[:]...)
+		opts := chromedp.DefaultExecAllocatorOptions[:]
+		if path := os.Getenv("CHROME_PATH"); path != "" {
+			opts = append(opts, chromedp.ExecPath(path))
+		}
+		alloc, _ := chromedp.NewExecAllocator(context.Background(), opts...)
 		browserCtx, _ = chromedp.NewContext(alloc)
 	}
 	return browserCtx
