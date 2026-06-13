@@ -33,7 +33,7 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 	if err != nil {
 		return BindResult{}, err
 	}
-	key, err := s.resolveFileKey(fileKey)
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return BindResult{}, err
 	}
@@ -43,7 +43,7 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 		return BindResult{}, err
 	}
 
-	doc, err := s.src.Document(key)
+	doc, err := s.src.Document(ctx, key)
 	if err != nil {
 		return BindResult{}, err
 	}
@@ -54,7 +54,7 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 	matched := map[string]matchedComponent{}
 
 	for _, section := range sections {
-		png, err := s.src.Screenshot(key, section.ID, figma.ScreenshotOpts{Scale: 2})
+		png, err := s.src.Screenshot(ctx, key, section.ID, figma.ScreenshotOpts{Scale: 2})
 		if err != nil {
 			p.emit(fmt.Sprintf("  ! %s: screenshot failed: %v", section.Name, err))
 			continue

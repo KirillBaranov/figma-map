@@ -4,6 +4,8 @@
 // added later behind the same interface.
 package figma
 
+import "context"
+
 // Bounds is the absolute bounding box of a node, in Figma canvas coordinates.
 type Bounds struct {
 	X      float64 `json:"x"`
@@ -40,20 +42,21 @@ type ScreenshotOpts struct {
 }
 
 // Source abstracts access to Figma data. Implementations are responsible for
-// transport and for mapping their wire format into the domain Node model.
+// transport and for mapping their wire format into the domain Node model. Every
+// call takes a context so callers can cancel or time out in-flight requests.
 type Source interface {
 	// Ping reports whether the source is reachable.
-	Ping() error
+	Ping(ctx context.Context) error
 	// Files lists the Figma files currently reachable through the source.
-	Files() ([]File, error)
+	Files(ctx context.Context) ([]File, error)
 	// Document returns the current page's node tree for the given file.
-	Document(fileKey string) (*Node, error)
+	Document(ctx context.Context, fileKey string) (*Node, error)
 	// Node returns a single node by id.
-	Node(fileKey, id string) (*Node, error)
+	Node(ctx context.Context, fileKey, id string) (*Node, error)
 	// Selection returns the nodes currently selected in the editor.
-	Selection(fileKey string) ([]Node, error)
+	Selection(ctx context.Context, fileKey string) ([]Node, error)
 	// Screenshot renders a node to image bytes.
-	Screenshot(fileKey, id string, opts ScreenshotOpts) ([]byte, error)
+	Screenshot(ctx context.Context, fileKey, id string, opts ScreenshotOpts) ([]byte, error)
 }
 
 // TopLevelFrames returns the direct FRAME children of the document root. On the

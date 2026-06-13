@@ -44,8 +44,8 @@ type doctorIn struct{}
 var doctorOp = Op[doctorIn, service.Report]{
 	Name:    "doctor",
 	Summary: "Check that the bridge, Chrome, Storybook, and API key are available",
-	Run: func(_ context.Context, s *service.Service, _ doctorIn) (service.Report, error) {
-		return s.Doctor(), nil
+	Run: func(ctx context.Context, s *service.Service, _ doctorIn) (service.Report, error) {
+		return s.Doctor(ctx), nil
 	},
 	Render: func(r service.Report) string {
 		var b strings.Builder

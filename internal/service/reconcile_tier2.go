@@ -37,7 +37,7 @@ func (s *Service) semanticDiff(ctx context.Context, key string, frame *figma.Nod
 	if err != nil {
 		return nil, err
 	}
-	design, err := s.src.Screenshot(key, frame.ID, figma.ScreenshotOpts{Scale: 2})
+	design, err := s.src.Screenshot(ctx, key, frame.ID, figma.ScreenshotOpts{Scale: 2})
 	if err != nil {
 		return nil, err
 	}

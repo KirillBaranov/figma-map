@@ -23,15 +23,15 @@ type ScreenshotResult struct {
 
 // Screenshot renders a node to PNG. If outPath is set the bytes are written
 // there. Deterministic (no API key).
-func (s *Service) Screenshot(_ context.Context, fileKey, nodeID string, scale float64, outPath string) (ScreenshotResult, error) {
-	key, err := s.resolveFileKey(fileKey)
+func (s *Service) Screenshot(ctx context.Context, fileKey, nodeID string, scale float64, outPath string) (ScreenshotResult, error) {
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return ScreenshotResult{}, err
 	}
 	if scale <= 0 {
 		scale = 2
 	}
-	png, err := s.src.Screenshot(key, nodeID, figma.ScreenshotOpts{Format: "PNG", Scale: scale})
+	png, err := s.src.Screenshot(ctx, key, nodeID, figma.ScreenshotOpts{Format: "PNG", Scale: scale})
 	if err != nil {
 		return ScreenshotResult{}, err
 	}

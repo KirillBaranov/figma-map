@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -23,7 +24,7 @@ type Report struct {
 
 // Doctor verifies the bridge, headless Chrome, Storybook, and API key. It is
 // deterministic and never requires the key to be present (it only reports it).
-func (s *Service) Doctor() Report {
+func (s *Service) Doctor(ctx context.Context) Report {
 	r := Report{OK: true}
 	add := func(name string, err error) {
 		c := Check{Name: name, OK: err == nil}
@@ -34,7 +35,7 @@ func (s *Service) Doctor() Report {
 		r.Checks = append(r.Checks, c)
 	}
 
-	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), s.src.Ping())
+	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), s.src.Ping(ctx))
 	add("headless chrome", findChrome())
 	add(fmt.Sprintf("storybook (%s)", s.cfg.Storybook), pingStorybook(s.cfg.Storybook))
 

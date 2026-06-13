@@ -77,14 +77,14 @@ func (s *Service) llmClient() (llm.VisionModel, error) {
 
 // resolveFileKey returns the file to operate on: explicit flag, then config,
 // else the single connected file (erroring if ambiguous).
-func (s *Service) resolveFileKey(flag string) (string, error) {
+func (s *Service) resolveFileKey(ctx context.Context, flag string) (string, error) {
 	if flag != "" {
 		return flag, nil
 	}
 	if s.cfg.FileKey != "" {
 		return s.cfg.FileKey, nil
 	}
-	files, err := s.src.Files()
+	files, err := s.src.Files(ctx)
 	if err != nil {
 		return "", err
 	}

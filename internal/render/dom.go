@@ -7,10 +7,32 @@ package render
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/chromedp/chromedp"
 )
+
+// One headless browser is shared across all renders; each call opens a fresh
+// tab. This keeps an agent's reconcile loop from launching Chrome on every call.
+var (
+	browserOnce sync.Once
+	browserCtx  context.Context
+)
+
+// tab opens a new tab on the shared browser, bounded by a timeout and cancelled
+// if the caller's context is done. The returned cancel closes the tab (the
+// browser itself is kept warm for the process lifetime).
+func tab(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	browserOnce.Do(func() {
+		alloc, _ := chromedp.NewExecAllocator(context.Background(), chromedp.DefaultExecAllocatorOptions[:]...)
+		browserCtx, _ = chromedp.NewContext(alloc)
+	})
+	tabCtx, cancelTab := chromedp.NewContext(browserCtx)
+	stop := context.AfterFunc(ctx, cancelTab)
+	timed, cancelTimed := context.WithTimeout(tabCtx, timeout)
+	return timed, func() { stop(); cancelTimed(); cancelTab() }
+}
 
 // Box is an element's layout rectangle in CSS pixels.
 type Box struct {
@@ -58,10 +80,8 @@ func Extract(ctx context.Context, url string, width int) ([]DOMElement, error) {
 		width = 1280
 	}
 
-	actx, cancel := chromedp.NewContext(ctx)
+	tctx, cancel := tab(ctx, 30*time.Second)
 	defer cancel()
-	tctx, cancelT := context.WithTimeout(actx, 30*time.Second)
-	defer cancelT()
 
 	var els []DOMElement
 	err := chromedp.Run(tctx,
@@ -83,10 +103,8 @@ func Screenshot(ctx context.Context, url string, width int) ([]byte, error) {
 	if width <= 0 {
 		width = 1280
 	}
-	actx, cancel := chromedp.NewContext(ctx)
+	tctx, cancel := tab(ctx, 30*time.Second)
 	defer cancel()
-	tctx, cancelT := context.WithTimeout(actx, 30*time.Second)
-	defer cancelT()
 
 	var buf []byte
 	err := chromedp.Run(tctx,

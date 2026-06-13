@@ -2,6 +2,7 @@ package figma
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -43,8 +44,12 @@ type rpcResponse struct {
 }
 
 // Ping reports whether the bridge is reachable and healthy.
-func (b *Bridge) Ping() error {
-	resp, err := b.client.Get(b.baseURL + "/ping")
+func (b *Bridge) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.baseURL+"/ping", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := b.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -56,13 +61,18 @@ func (b *Bridge) Ping() error {
 }
 
 // rpc performs a single tool call and returns the raw data payload.
-func (b *Bridge) rpc(req rpcRequest) (json.RawMessage, error) {
+func (b *Bridge) rpc(ctx context.Context, req rpcRequest) (json.RawMessage, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
 
-	httpResp, err := b.client.Post(b.baseURL+"/rpc", "application/json", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, b.baseURL+"/rpc", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpResp, err := b.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("bridge unreachable at %s: %w", b.baseURL, err)
 	}
@@ -87,8 +97,8 @@ func (b *Bridge) rpc(req rpcRequest) (json.RawMessage, error) {
 }
 
 // Files implements Source.
-func (b *Bridge) Files() ([]File, error) {
-	data, err := b.rpc(rpcRequest{Tool: "list_files"})
+func (b *Bridge) Files(ctx context.Context) ([]File, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "list_files"})
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +110,8 @@ func (b *Bridge) Files() ([]File, error) {
 }
 
 // Document implements Source.
-func (b *Bridge) Document(fileKey string) (*Node, error) {
-	data, err := b.rpc(rpcRequest{Tool: "get_document", FileKey: fileKey})
+func (b *Bridge) Document(ctx context.Context, fileKey string) (*Node, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_document", FileKey: fileKey})
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +125,8 @@ func (b *Bridge) Document(fileKey string) (*Node, error) {
 // Node implements Source. The bridge returns get_node payloads as either a
 // single object or a one-element array depending on version, so both are
 // accepted.
-func (b *Bridge) Node(fileKey, id string) (*Node, error) {
-	data, err := b.rpc(rpcRequest{Tool: "get_node", NodeIDs: []string{id}, FileKey: fileKey})
+func (b *Bridge) Node(ctx context.Context, fileKey, id string) (*Node, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_node", NodeIDs: []string{id}, FileKey: fileKey})
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +134,8 @@ func (b *Bridge) Node(fileKey, id string) (*Node, error) {
 }
 
 // Selection implements Source.
-func (b *Bridge) Selection(fileKey string) ([]Node, error) {
-	data, err := b.rpc(rpcRequest{Tool: "get_selection", FileKey: fileKey})
+func (b *Bridge) Selection(ctx context.Context, fileKey string) ([]Node, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_selection", FileKey: fileKey})
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +158,7 @@ type screenshotResponse struct {
 }
 
 // Screenshot implements Source.
-func (b *Bridge) Screenshot(fileKey, id string, opts ScreenshotOpts) ([]byte, error) {
+func (b *Bridge) Screenshot(ctx context.Context, fileKey, id string, opts ScreenshotOpts) ([]byte, error) {
 	params := map[string]any{}
 	if opts.Format != "" {
 		params["format"] = opts.Format
@@ -159,7 +169,7 @@ func (b *Bridge) Screenshot(fileKey, id string, opts ScreenshotOpts) ([]byte, er
 		params["scale"] = opts.Scale
 	}
 
-	data, err := b.rpc(rpcRequest{
+	data, err := b.rpc(ctx, rpcRequest{
 		Tool:    "get_screenshot",
 		NodeIDs: []string{id},
 		Params:  params,

@@ -38,16 +38,16 @@ func (s *Service) Map(ctx context.Context, fileKey, bindingPath, catalogDir, nod
 	if err != nil {
 		return MapResult{}, err
 	}
-	key, err := s.resolveFileKey(fileKey)
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return MapResult{}, err
 	}
 
-	png, err := s.src.Screenshot(key, nodeID, figma.ScreenshotOpts{Scale: 2})
+	png, err := s.src.Screenshot(ctx, key, nodeID, figma.ScreenshotOpts{Scale: 2})
 	if err != nil {
 		return MapResult{}, err
 	}
-	node, err := s.src.Node(key, nodeID)
+	node, err := s.src.Node(ctx, key, nodeID)
 	if err != nil {
 		return MapResult{}, err
 	}

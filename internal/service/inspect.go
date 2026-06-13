@@ -27,12 +27,12 @@ type InspectResult struct {
 
 // Inspect returns a node's subtree as a flat list (structure + optional tokens).
 // Deterministic. depth limits recursion: 0 means unlimited.
-func (s *Service) Inspect(_ context.Context, fileKey, nodeID string, withTokens bool, depth int) (InspectResult, error) {
-	key, err := s.resolveFileKey(fileKey)
+func (s *Service) Inspect(ctx context.Context, fileKey, nodeID string, withTokens bool, depth int) (InspectResult, error) {
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return InspectResult{}, err
 	}
-	node, err := s.src.Node(key, nodeID)
+	node, err := s.src.Node(ctx, key, nodeID)
 	if err != nil {
 		return InspectResult{}, err
 	}

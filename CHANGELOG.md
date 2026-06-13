@@ -34,6 +34,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when it can't fully converge.
 - Testable seams: `figma.Source` and `llm.VisionModel` are injectable; offline
   tests cover the matcher and the Map/Plan orchestration.
+- `figma.Source` methods now take a `context.Context` (cancellation/timeouts
+  propagate to bridge HTTP calls).
+- Headless Chrome is pooled: one browser is reused across renders (a tab per
+  call) instead of launching Chrome on every reconcile.
 
 ## [0.1.0] - 2026-06-13
 

@@ -37,12 +37,12 @@ type TokensResult struct {
 }
 
 // GetTokens returns the normalized tokens for a single node. Deterministic.
-func (s *Service) GetTokens(_ context.Context, fileKey, nodeID string) (TokensResult, error) {
-	key, err := s.resolveFileKey(fileKey)
+func (s *Service) GetTokens(ctx context.Context, fileKey, nodeID string) (TokensResult, error) {
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return TokensResult{}, err
 	}
-	node, err := s.src.Node(key, nodeID)
+	node, err := s.src.Node(ctx, key, nodeID)
 	if err != nil {
 		return TokensResult{}, err
 	}

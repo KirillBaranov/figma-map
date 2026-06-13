@@ -74,12 +74,12 @@ func (s *Service) Plan(ctx context.Context, fileKey, frameID string, depth int, 
 	if err != nil {
 		return Plan{}, err
 	}
-	key, err := s.resolveFileKey(fileKey)
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return Plan{}, err
 	}
 
-	frame, err := s.src.Node(key, frameID)
+	frame, err := s.src.Node(ctx, key, frameID)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -106,7 +106,7 @@ func (s *Service) Plan(ctx context.Context, fileKey, frameID string, depth int, 
 		k := instKey(inst)
 		oc, done := cache[k]
 		if !done {
-			png, err := s.src.Screenshot(key, inst.ID, figma.ScreenshotOpts{Scale: 2})
+			png, err := s.src.Screenshot(ctx, key, inst.ID, figma.ScreenshotOpts{Scale: 2})
 			if err != nil {
 				oc = outcome{}
 			} else if comp, name, score, err := matchBound(ctx, client, b, catalog, catalogDir, inst, png); err != nil {

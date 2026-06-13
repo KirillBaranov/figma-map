@@ -88,11 +88,11 @@ type figmaTarget struct {
 // imagePath falls back to Tier 2 only (no DOM). semantic enables the Tier-2 LLM
 // check (requires an API key).
 func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, imagePath string, semantic bool) (Diff, error) {
-	key, err := s.resolveFileKey(fileKey)
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return Diff{}, err
 	}
-	frame, err := s.src.Node(key, nodeID)
+	frame, err := s.src.Node(ctx, key, nodeID)
 	if err != nil {
 		return Diff{}, err
 	}

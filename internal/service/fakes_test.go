@@ -25,22 +25,22 @@ type fakeSource struct {
 	png   []byte
 }
 
-func (f *fakeSource) Ping() error                  { return nil }
-func (f *fakeSource) Files() ([]figma.File, error) { return f.files, nil }
-func (f *fakeSource) Document(string) (*figma.Node, error) {
+func (f *fakeSource) Ping(context.Context) error                  { return nil }
+func (f *fakeSource) Files(context.Context) ([]figma.File, error) { return f.files, nil }
+func (f *fakeSource) Document(context.Context, string) (*figma.Node, error) {
 	if f.doc == nil {
 		return nil, fmt.Errorf("no document")
 	}
 	return f.doc, nil
 }
-func (f *fakeSource) Node(_ string, id string) (*figma.Node, error) {
+func (f *fakeSource) Node(_ context.Context, _ string, id string) (*figma.Node, error) {
 	if n, ok := f.nodes[id]; ok {
 		return n, nil
 	}
 	return nil, fmt.Errorf("no node %s", id)
 }
-func (f *fakeSource) Selection(string) ([]figma.Node, error) { return nil, nil }
-func (f *fakeSource) Screenshot(string, string, figma.ScreenshotOpts) ([]byte, error) {
+func (f *fakeSource) Selection(context.Context, string) ([]figma.Node, error) { return nil, nil }
+func (f *fakeSource) Screenshot(context.Context, string, string, figma.ScreenshotOpts) ([]byte, error) {
 	return f.png, nil
 }
 

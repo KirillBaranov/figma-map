@@ -25,7 +25,7 @@ var assetFormats = map[string]string{"PNG": ".png", "SVG": ".svg", "JPG": ".jpg"
 // ExportAssets exports a node to outDir in the given format (PNG/SVG/JPG).
 // Production-asset export (e.g. hero images, icons): export, don't regenerate.
 // Deterministic (no API key).
-func (s *Service) ExportAssets(_ context.Context, fileKey, nodeID, format, outDir string) (ExportResult, error) {
+func (s *Service) ExportAssets(ctx context.Context, fileKey, nodeID, format, outDir string) (ExportResult, error) {
 	format = strings.ToUpper(format)
 	if format == "" {
 		format = "SVG"
@@ -35,15 +35,15 @@ func (s *Service) ExportAssets(_ context.Context, fileKey, nodeID, format, outDi
 		return ExportResult{}, fmt.Errorf("unsupported format %q (use PNG, SVG, or JPG)", format)
 	}
 
-	key, err := s.resolveFileKey(fileKey)
+	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return ExportResult{}, err
 	}
-	node, err := s.src.Node(key, nodeID)
+	node, err := s.src.Node(ctx, key, nodeID)
 	if err != nil {
 		return ExportResult{}, err
 	}
-	data, err := s.src.Screenshot(key, nodeID, figma.ScreenshotOpts{Format: format, Scale: 2})
+	data, err := s.src.Screenshot(ctx, key, nodeID, figma.ScreenshotOpts{Format: format, Scale: 2})
 	if err != nil {
 		return ExportResult{}, err
 	}
