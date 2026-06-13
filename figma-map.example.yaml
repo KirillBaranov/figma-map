@@ -1,0 +1,22 @@
+# figma-map configuration. Copy to figma-map.yaml and adjust.
+# The API key is NOT stored here — it is read from the environment variable
+# named by llm.apiKeyEnv (default OPENAI_API_KEY).
+
+# figma-mcp-bridge HTTP RPC server.
+bridge: http://localhost:1994
+
+# Running Storybook instance.
+storybook: http://localhost:6007
+
+# Default Figma file key. Leave empty to use the sole connected file, or pass
+# --file on the command line.
+fileKey: ""
+
+llm:
+  # OpenAI-compatible endpoint. Empty = api.openai.com. Point at the kb-labs
+  # gateway or a local Ollama server (http://localhost:11434/v1) to use those.
+  baseURL: ""
+  # Vision-capable chat model.
+  model: gpt-4o-mini
+  # Environment variable holding the API key.
+  apiKeyEnv: OPENAI_API_KEY
