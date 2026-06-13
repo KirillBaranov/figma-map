@@ -48,7 +48,7 @@ func (b *Bridge) Ping() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("bridge /ping returned %d", resp.StatusCode)
 	}
@@ -66,7 +66,7 @@ func (b *Bridge) rpc(req rpcRequest) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bridge unreachable at %s: %w", b.baseURL, err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	raw, err := io.ReadAll(httpResp.Body)
 	if err != nil {

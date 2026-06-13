@@ -21,7 +21,7 @@ func newScanCmd() *cobra.Command {
 		Long: "scan reads a running Storybook's index.json, screenshots each UI " +
 			"story with headless Chrome, resolves each component's real import from " +
 			"its story source, and writes catalog.json plus PNGs.",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -50,8 +50,8 @@ func newScanCmd() *cobra.Command {
 			}
 
 			fmt.Println("Capturing screenshots …")
-			cap := storybook.NewCapturer(storybookURL)
-			if err := cap.CaptureAll(context.Background(), stories, out); err != nil {
+			capturer := storybook.NewCapturer(storybookURL)
+			if err := capturer.CaptureAll(context.Background(), stories, out); err != nil {
 				return err
 			}
 

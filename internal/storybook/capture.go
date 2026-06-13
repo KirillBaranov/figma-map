@@ -19,7 +19,7 @@ func FetchIndex(storybookURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch index.json from %s: %w", storybookURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("storybook index.json returned %d", resp.StatusCode)
 	}

@@ -29,7 +29,7 @@ func newBindCmd() *cobra.Command {
 		Long: "bind screenshots each top-level Figma component section, matches it " +
 			"against the scanned catalog with a vision LLM, infers each matched " +
 			"component's prop schema, and writes a reviewable figma-map.binding.yaml.",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err

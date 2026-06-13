@@ -28,7 +28,7 @@ func newMapCmd() *cobra.Command {
 		Long: "map screenshots a Figma node, identifies which bound component it is, " +
 			"infers prop values against that component's schema, and prints JSX.",
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			nodeID := args[0]
 
 			cfg, err := loadConfig()

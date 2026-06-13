@@ -9,8 +9,15 @@ import (
 	"github.com/kirillbaranov/figma-map/cmd"
 )
 
+// Build information, injected via -ldflags at release time.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
-	if err := cmd.Execute(); err != nil {
+	if err := cmd.Execute(cmd.BuildInfo{Version: version, Commit: commit, Date: date}); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
