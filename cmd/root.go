@@ -1,14 +1,17 @@
-// Package cmd wires the figma-map CLI subcommands.
+// Package cmd wires the figma-map CLI. Every subcommand is generated from the
+// shared operation registry (internal/op), so the CLI and the MCP server expose
+// the same operations with identical names and descriptions.
 package cmd
 
 import (
 	"fmt"
 
 	"github.com/kirillbaranov/figma-map/internal/config"
+	"github.com/kirillbaranov/figma-map/internal/op"
+	"github.com/kirillbaranov/figma-map/internal/service"
 	"github.com/spf13/cobra"
 )
 
-// configPath is the --config flag value, shared by all subcommands.
 var configPath string
 
 // BuildInfo carries version metadata injected at build time.
@@ -18,12 +21,9 @@ type BuildInfo struct {
 	Date    string
 }
 
-// loadConfig loads the config file named by the --config flag.
-func loadConfig() (config.Config, error) {
-	return config.Load(configPath)
-}
-
 func newRootCmd(info BuildInfo) *cobra.Command {
+	var svc *service.Service
+
 	root := &cobra.Command{
 		Use:   "figma-map",
 		Short: "Map Figma design components to code components",
@@ -32,15 +32,24 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 		Version:       fmt.Sprintf("%s (commit %s, built %s)", info.Version, info.Commit, info.Date),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Load config after flags are parsed, then build the service once.
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return err
+			}
+			svc = service.New(cfg)
+			return nil
+		},
 	}
 	root.PersistentFlags().StringVar(&configPath, "config", "figma-map.yaml", "path to config file")
 
-	root.AddCommand(
-		newDoctorCmd(),
-		newScanCmd(),
-		newBindCmd(),
-		newMapCmd(),
-	)
+	get := func() *service.Service { return svc }
+	for _, o := range op.All() {
+		o.AddCLI(root, get)
+	}
+	root.AddCommand(newMCPCmd(get))
+
 	return root
 }
 

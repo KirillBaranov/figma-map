@@ -21,6 +21,7 @@ type Node struct {
 	Type       string `json:"type"`
 	Characters string `json:"characters,omitempty"`
 	Bounds     Bounds `json:"bounds"`
+	Styles     *Style `json:"styles,omitempty"`
 	Children   []Node `json:"children,omitempty"`
 }
 
