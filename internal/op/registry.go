@@ -2,12 +2,22 @@ package op
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/kirillbaranov/figma-map/internal/service"
 )
+
+// indentJSON pretty-prints a value for human CLI output.
+func indentJSON(v any) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(b)
+}
 
 // All returns every operation, in display order. Each appears once and yields
 // both a CLI subcommand and an MCP tool.
@@ -17,7 +27,12 @@ func All() []Registrar {
 		scanOp,
 		bindOp,
 		listOp,
+		tokensOp,
+		inspectOp,
+		screenshotOp,
+		exportAssetsOp,
 		mapOp,
+		planOp,
 	}
 }
 
@@ -144,5 +159,137 @@ var mapOp = Op[mapIn, service.MapResult]{
 	},
 	Render: func(r service.MapResult) string {
 		return fmt.Sprintf("// %s → %s (%.2f)\n%s", r.NodeID, r.Component, r.Score, r.JSX)
+	},
+}
+
+// ---- tokens ----
+
+type tokensIn struct {
+	NodeID string `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
+	File   string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+}
+
+var tokensOp = Op[tokensIn, service.TokensResult]{
+	Name:    "tokens",
+	Summary: "Extract exact design tokens (color, spacing, font, radius) for a node",
+	Run: func(ctx context.Context, s *service.Service, in tokensIn) (service.TokensResult, error) {
+		return s.GetTokens(ctx, in.File, in.NodeID)
+	},
+	Render: func(r service.TokensResult) string {
+		if r.Tokens == nil {
+			return fmt.Sprintf("%s (%s): no tokens", r.Name, r.Type)
+		}
+		return fmt.Sprintf("%s (%s):\n%s", r.Name, r.Type, indentJSON(r.Tokens))
+	},
+}
+
+// ---- inspect ----
+
+type inspectIn struct {
+	NodeID string `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
+	File   string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Tokens bool   `json:"tokens" jsonschema:"include design tokens per node"`
+	Depth  int    `json:"depth" jsonschema:"max tree depth (0 = unlimited)" default:"0"`
+}
+
+var inspectOp = Op[inspectIn, service.InspectResult]{
+	Name:    "inspect",
+	Summary: "Inspect a Figma node subtree (structure, text, bounds, optional tokens)",
+	Run: func(ctx context.Context, s *service.Service, in inspectIn) (service.InspectResult, error) {
+		return s.Inspect(ctx, in.File, in.NodeID, in.Tokens, in.Depth)
+	},
+	Render: func(r service.InspectResult) string {
+		var b strings.Builder
+		for _, n := range r.Nodes {
+			indent := strings.Repeat("  ", n.Depth)
+			fmt.Fprintf(&b, "%s%s [%s]", indent, n.Name, n.Type)
+			if n.Text != "" {
+				fmt.Fprintf(&b, " %q", n.Text)
+			}
+			b.WriteString("\n")
+		}
+		return strings.TrimRight(b.String(), "\n")
+	},
+}
+
+// ---- screenshot ----
+
+type screenshotIn struct {
+	NodeID string  `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
+	File   string  `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Out    string  `json:"out" jsonschema:"output PNG path (CLI); omit for raw image (MCP)"`
+	Scale  float64 `json:"scale" jsonschema:"export scale factor" default:"2"`
+}
+
+var screenshotOp = Op[screenshotIn, service.ScreenshotResult]{
+	Name:    "screenshot",
+	Summary: "Render a Figma node to a PNG image",
+	Run: func(ctx context.Context, s *service.Service, in screenshotIn) (service.ScreenshotResult, error) {
+		return s.Screenshot(ctx, in.File, in.NodeID, in.Scale, in.Out)
+	},
+	Render: func(r service.ScreenshotResult) string {
+		if r.Path != "" {
+			return fmt.Sprintf("wrote %s (%d×%d)", r.Path, r.Width, r.Height)
+		}
+		return fmt.Sprintf("%d×%d PNG — pass --out to save, or use MCP for the image", r.Width, r.Height)
+	},
+	Image: func(r service.ScreenshotResult) ([]byte, string) {
+		return r.PNG, "image/png"
+	},
+}
+
+// ---- export-assets ----
+
+type exportIn struct {
+	NodeID string `json:"nodeId" jsonschema:"Figma node id to export" cli:"arg"`
+	File   string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Format string `json:"format" jsonschema:"PNG, SVG, or JPG" default:"SVG"`
+	Out    string `json:"out" jsonschema:"output directory" default:"assets"`
+}
+
+var exportAssetsOp = Op[exportIn, service.ExportResult]{
+	Name:    "export-assets",
+	Summary: "Export a Figma node to a file (SVG/PNG/JPG) for use as a production asset",
+	Run: func(ctx context.Context, s *service.Service, in exportIn) (service.ExportResult, error) {
+		return s.ExportAssets(ctx, in.File, in.NodeID, in.Format, in.Out)
+	},
+	Render: func(r service.ExportResult) string {
+		return fmt.Sprintf("exported %s (%d bytes)", r.Path, r.Bytes)
+	},
+}
+
+// ---- plan ----
+
+type planIn struct {
+	FrameID string `json:"frameId" jsonschema:"Figma frame node id to map" cli:"arg"`
+	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Depth   int    `json:"depth" jsonschema:"max nesting depth to search (0 = unlimited)" default:"0"`
+	Binding string `json:"binding" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
+	Catalog string `json:"catalog" jsonschema:"catalog directory from scan" default:"catalog"`
+}
+
+var planOp = Op[planIn, service.Plan]{
+	Name:    "plan",
+	Summary: "Map every component instance in a Figma frame to code (buildable spec)",
+	Run: func(ctx context.Context, s *service.Service, in planIn) (service.Plan, error) {
+		return s.Plan(ctx, in.File, in.FrameID, in.Depth, in.Binding, in.Catalog)
+	},
+	Render: func(p service.Plan) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s (%.0f×%.0f)", p.Frame.Name, p.Frame.Width, p.Frame.Height)
+		if p.Layout != nil {
+			fmt.Fprintf(&b, " — layout: %s", p.Layout.Direction)
+			if p.Layout.Gap != nil {
+				fmt.Fprintf(&b, " gap %.0f", *p.Layout.Gap)
+			}
+		}
+		b.WriteString("\n")
+		for _, c := range p.Components {
+			fmt.Fprintf(&b, "  ✓ %s (%s) %v %.2f\n", c.Component, c.Import, c.Props, c.Confidence)
+		}
+		for _, u := range p.Unmapped {
+			fmt.Fprintf(&b, "  – %s [%s] — %s\n", u.Name, u.Type, u.Reason)
+		}
+		return strings.TrimRight(b.String(), "\n")
 	},
 }
