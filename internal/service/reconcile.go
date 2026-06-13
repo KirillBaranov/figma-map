@@ -13,11 +13,14 @@ import (
 	"github.com/kirillbaranov/figma-map/internal/render"
 )
 
-// FieldDiff is one property that differs, with exact is/should values.
+// FieldDiff is one property that differs, with exact is/should values. Advisory
+// marks diffs that may be content-driven (e.g. width/height) and so should not
+// block a match — the agent triages them rather than blindly "fixing" them.
 type FieldDiff struct {
-	Prop   string `json:"prop"`
-	Is     string `json:"is"`
-	Should string `json:"should"`
+	Prop     string `json:"prop"`
+	Is       string `json:"is"`
+	Should   string `json:"should"`
+	Advisory bool   `json:"advisory,omitempty"`
 }
 
 // ElementDiff groups the differing properties of one element.
@@ -27,6 +30,17 @@ type ElementDiff struct {
 	Diffs  []FieldDiff `json:"diffs"`
 }
 
+// UnmeasuredNode is a token-bearing design node with no matching DOM element.
+// Actionable=true means the agent should tag it (data-figma-node) and build it;
+// false means it's decorative/image content that isn't DOM-measurable anyway.
+type UnmeasuredNode struct {
+	NodeID     string `json:"nodeId"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Actionable bool   `json:"actionable"`
+	Reason     string `json:"reason"`
+}
+
 // SemanticFinding is a Tier-2 (LLM) observation Tier 1 can't measure.
 type SemanticFinding struct {
 	Kind     string `json:"kind"`
@@ -34,13 +48,23 @@ type SemanticFinding struct {
 	Severity string `json:"severity"`
 }
 
-// Diff is the reconcile result: deterministic per-element field diffs (Tier 1),
-// honest unmeasured nodes, and optional semantic findings (Tier 2).
+// Coverage reports how much of the design was actually verified, so a "match"
+// comes with an honest confidence rather than implying full coverage.
+type Coverage struct {
+	Measured int `json:"measured"`
+	Targets  int `json:"targets"`
+}
+
+// Diff is the reconcile result: a report the agent can act on or hand to a
+// human — deterministic per-element field diffs (Tier 1), honest unmeasured
+// nodes, coverage, and optional semantic findings (Tier 2).
 type Diff struct {
 	Match      bool              `json:"match"`
-	Remaining  int               `json:"remaining"`
+	Remaining  int               `json:"remaining"` // fixable (non-advisory) diffs
+	Advisory   int               `json:"advisory"`  // content-driven diffs (don't block match)
+	Coverage   Coverage          `json:"coverage"`
 	ByElement  []ElementDiff     `json:"byElement,omitempty"`
-	Unmeasured []string          `json:"unmeasured,omitempty"`
+	Unmeasured []UnmeasuredNode  `json:"unmeasured,omitempty"`
 	Semantic   []SemanticFinding `json:"semantic,omitempty"`
 }
 
@@ -100,14 +124,22 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 	collectTargets(frame, want)
 
 	byElement, unmeasured := tier1Diff(want, got)
-	remaining := 0
+	remaining, advisory := 0, 0
 	for _, e := range byElement {
-		remaining += len(e.Diffs)
+		for _, d := range e.Diffs {
+			if d.Advisory {
+				advisory++
+			} else {
+				remaining++
+			}
+		}
 	}
 
 	diff := Diff{
 		Match:      remaining == 0,
 		Remaining:  remaining,
+		Advisory:   advisory,
+		Coverage:   Coverage{Measured: len(want) - len(unmeasured), Targets: len(want)},
 		ByElement:  byElement,
 		Unmeasured: unmeasured,
 	}
@@ -137,7 +169,7 @@ func collectTargets(n *figma.Node, out map[string]figmaTarget) {
 // tier1Diff is the deterministic core: for each Figma node aligned to a DOM
 // element by data-figma-node, compare exact values within tolerance. Figma
 // nodes with no DOM match are reported unmeasured (never silently passed).
-func tier1Diff(want map[string]figmaTarget, got map[string]render.DOMElement) ([]ElementDiff, []string) {
+func tier1Diff(want map[string]figmaTarget, got map[string]render.DOMElement) ([]ElementDiff, []UnmeasuredNode) {
 	ids := make([]string, 0, len(want))
 	for id := range want {
 		ids = append(ids, id)
@@ -145,12 +177,12 @@ func tier1Diff(want map[string]figmaTarget, got map[string]render.DOMElement) ([
 	sort.Strings(ids)
 
 	var byElement []ElementDiff
-	var unmeasured []string
+	var unmeasured []UnmeasuredNode
 	for _, id := range ids {
 		ft := want[id]
 		el, ok := got[id]
 		if !ok {
-			unmeasured = append(unmeasured, id)
+			unmeasured = append(unmeasured, classifyUnmeasured(id, ft))
 			continue
 		}
 		if diffs := compareNode(ft, el); len(diffs) > 0 {
@@ -160,11 +192,27 @@ func tier1Diff(want map[string]figmaTarget, got map[string]render.DOMElement) ([
 	return byElement, unmeasured
 }
 
+// classifyUnmeasured labels an unmatched target as actionable (the agent should
+// tag and build it) or expected (decorative/image, not DOM-measurable).
+func classifyUnmeasured(id string, ft figmaTarget) UnmeasuredNode {
+	switch ft.typ {
+	case "RECTANGLE", "ELLIPSE", "LINE", "VECTOR", "STAR", "POLYGON", "IMAGE", "BOOLEAN_OPERATION":
+		return UnmeasuredNode{NodeID: id, Name: ft.name, Type: ft.typ,
+			Actionable: false, Reason: "decorative/image node — not DOM-measurable"}
+	default:
+		return UnmeasuredNode{NodeID: id, Name: ft.name, Type: ft.typ,
+			Actionable: true, Reason: "no data-figma-node match — tag this element to verify it"}
+	}
+}
+
 // compareNode produces the field diffs for one aligned node/element pair.
 func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 	t := ft.tokens
 	var diffs []FieldDiff
-	add := func(prop, is, should string) { diffs = append(diffs, FieldDiff{prop, is, should}) }
+	add := func(prop, is, should string) { diffs = append(diffs, FieldDiff{Prop: prop, Is: is, Should: should}) }
+	addAdv := func(prop, is, should string) {
+		diffs = append(diffs, FieldDiff{Prop: prop, Is: is, Should: should, Advisory: true})
+	}
 	cmp := func(prop, css string, want, tol float64) {
 		if is, should, bad := cmpLen(css, want, tol); bad {
 			add(prop, is, should)
@@ -238,12 +286,12 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 	// the Figma node's bounds against the rendered element's box.
 	if ft.bounds.Width > 0 {
 		if is, should, bad := cmpDim(el.Box.Width, ft.bounds.Width, tolBox); bad {
-			add("width", is, should)
+			addAdv("width", is, should)
 		}
 	}
 	if ft.bounds.Height > 0 {
 		if is, should, bad := cmpDim(el.Box.Height, ft.bounds.Height, tolBox); bad {
-			add("height", is, should)
+			addAdv("height", is, should)
 		}
 	}
 	return diffs

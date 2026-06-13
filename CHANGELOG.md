@@ -21,6 +21,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--json` output on every command. Deterministic ops no longer require an API key.
 - ADR-0001 (figma-map is a dumb tool: deterministic-first, agent owns the loop).
 
+### Changed
+
+- `reconcile` now uses OpenAI **structured outputs** (json_schema, strict) — no
+  more parsing JSON out of free text; same for matching and prop inference.
+- `reconcile` property coverage expanded: border (width/color), opacity,
+  line-height, letter-spacing, text-align, width/height — on top of color, font,
+  radius, padding, gap.
+- `reconcile` output is now a **report**: fixable vs advisory (content-driven)
+  diffs, measurement **coverage**, and `unmeasured` nodes split into actionable
+  ("tag this") vs expected (decorative/image). The thing an agent hands a human
+  when it can't fully converge.
+- Testable seams: `figma.Source` and `llm.VisionModel` are injectable; offline
+  tests cover the matcher and the Map/Plan orchestration.
+
 ## [0.1.0] - 2026-06-13
 
 ### Added

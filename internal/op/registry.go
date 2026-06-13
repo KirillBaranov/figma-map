@@ -316,25 +316,93 @@ var reconcileOp = Op[reconcileIn, service.Diff]{
 	Run: func(ctx context.Context, s *service.Service, in reconcileIn) (service.Diff, error) {
 		return s.Reconcile(ctx, in.File, in.NodeID, in.Story, in.URL, in.Image, in.Semantic)
 	},
-	Render: func(d service.Diff) string {
-		var b strings.Builder
-		if d.Match {
-			b.WriteString("✓ match (within tolerance)\n")
-		} else {
-			fmt.Fprintf(&b, "✗ %d difference(s)\n", d.Remaining)
+	Render: renderReconcile,
+}
+
+// renderReconcile formats a reconcile Diff as a human-readable report — the
+// thing an agent hands to a person when it can't fully converge.
+func renderReconcile(d service.Diff) string {
+	var b strings.Builder
+
+	// Headline.
+	if d.Match {
+		fmt.Fprintf(&b, "✓ match within tolerance (%d/%d nodes measured)\n",
+			d.Coverage.Measured, d.Coverage.Targets)
+	} else {
+		fmt.Fprintf(&b, "✗ %d fixable difference(s)", d.Remaining)
+		if d.Advisory > 0 {
+			fmt.Fprintf(&b, " · %d advisory", d.Advisory)
 		}
-		for _, e := range d.ByElement {
+		fmt.Fprintf(&b, " · %d/%d nodes measured\n", d.Coverage.Measured, d.Coverage.Targets)
+	}
+
+	// Fixable diffs first (the agent should resolve these).
+	fixable := elementsWith(d.ByElement, false)
+	if len(fixable) > 0 {
+		b.WriteString("\nFix these:\n")
+		for _, e := range fixable {
 			fmt.Fprintf(&b, "  %s (%s):\n", e.Name, e.NodeID)
 			for _, f := range e.Diffs {
-				fmt.Fprintf(&b, "    %s: %s → should be %s\n", f.Prop, f.Is, f.Should)
+				if !f.Advisory {
+					fmt.Fprintf(&b, "    %s: %s → should be %s\n", f.Prop, f.Is, f.Should)
+				}
 			}
 		}
+	}
+
+	// Advisory diffs (may be content-driven — judge, don't blindly change).
+	advisory := elementsWith(d.ByElement, true)
+	if len(advisory) > 0 {
+		b.WriteString("\nAdvisory (may be content-driven):\n")
+		for _, e := range advisory {
+			for _, f := range e.Diffs {
+				if f.Advisory {
+					fmt.Fprintf(&b, "  %s (%s) %s: %s → %s\n", e.Name, e.NodeID, f.Prop, f.Is, f.Should)
+				}
+			}
+		}
+	}
+
+	// Semantic findings.
+	if len(d.Semantic) > 0 {
+		b.WriteString("\nSemantic:\n")
 		for _, f := range d.Semantic {
 			fmt.Fprintf(&b, "  [%s/%s] %s\n", f.Kind, f.Severity, f.Detail)
 		}
-		if len(d.Unmeasured) > 0 {
-			fmt.Fprintf(&b, "  unmeasured (no data-figma-node match): %s\n", strings.Join(d.Unmeasured, ", "))
+	}
+
+	// Unmeasured, split into actionable vs expected.
+	var toTag []service.UnmeasuredNode
+	decorative := 0
+	for _, u := range d.Unmeasured {
+		if u.Actionable {
+			toTag = append(toTag, u)
+		} else {
+			decorative++
 		}
-		return strings.TrimRight(b.String(), "\n")
-	},
+	}
+	if len(toTag) > 0 {
+		b.WriteString("\nNot verified — tag these with data-figma-node:\n")
+		for _, u := range toTag {
+			fmt.Fprintf(&b, "  - %s [%s] %s\n", u.Name, u.Type, u.NodeID)
+		}
+	}
+	if decorative > 0 {
+		fmt.Fprintf(&b, "\n%d decorative/image node(s) not DOM-measurable (expected).\n", decorative)
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func elementsWith(els []service.ElementDiff, advisory bool) []service.ElementDiff {
+	var out []service.ElementDiff
+	for _, e := range els {
+		for _, f := range e.Diffs {
+			if f.Advisory == advisory {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	return out
 }

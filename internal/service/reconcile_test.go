@@ -92,8 +92,29 @@ func TestTier1_UnmeasuredWhenNoDOMMatch(t *testing.T) {
 	if len(byEl) != 0 {
 		t.Errorf("expected no diffs, got %+v", byEl)
 	}
-	if len(unmeasured) != 1 || unmeasured[0] != "ghost" {
-		t.Errorf("expected ghost unmeasured, got %v", unmeasured)
+	if len(unmeasured) != 1 || unmeasured[0].NodeID != "ghost" {
+		t.Fatalf("expected ghost unmeasured, got %+v", unmeasured)
+	}
+	// A FRAME with no DOM match is actionable (the agent should tag it).
+	if !unmeasured[0].Actionable {
+		t.Error("FRAME unmeasured should be actionable")
+	}
+}
+
+func TestClassifyUnmeasured(t *testing.T) {
+	// Decorative/image nodes are expected-unmeasured, not actionable.
+	for _, typ := range []string{"VECTOR", "RECTANGLE", "LINE", "ELLIPSE"} {
+		u := classifyUnmeasured("1", figmaTarget{typ: typ, name: "x"})
+		if u.Actionable {
+			t.Errorf("%s should not be actionable", typ)
+		}
+	}
+	// Frames/text/instances are actionable (should be tagged).
+	for _, typ := range []string{"FRAME", "TEXT", "INSTANCE"} {
+		u := classifyUnmeasured("1", figmaTarget{typ: typ, name: "x"})
+		if !u.Actionable {
+			t.Errorf("%s should be actionable", typ)
+		}
 	}
 }
 
