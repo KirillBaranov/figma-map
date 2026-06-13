@@ -65,6 +65,9 @@ func alignElements(want map[string]figmaTarget, els []render.DOMElement) (map[st
 			}
 			db := normalize(box{e.Box.X, e.Box.Y, e.Box.Width, e.Box.Height}, ext)
 			score := iou(fb, db)
+			if typeCompatible(ft.typ, e) {
+				score += 0.1 // nudge ties toward the right kind of element
+			}
 			if ft.typ == "TEXT" && textOverlap(ft.text, e.Text) {
 				score += 0.3
 			}
@@ -123,6 +126,17 @@ func iou(a, b box) float64 {
 		return 0
 	}
 	return inter / union
+}
+
+// typeCompatible reports whether a DOM element is the right kind for a design
+// node type: TEXT nodes want elements carrying their own text; other nodes want
+// container-like elements (no own text).
+func typeCompatible(typ string, e render.DOMElement) bool {
+	hasText := strings.TrimSpace(e.Text) != ""
+	if typ == "TEXT" {
+		return hasText
+	}
+	return !hasText
 }
 
 // textOverlap reports whether two text snippets plausibly refer to the same

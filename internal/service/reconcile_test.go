@@ -194,6 +194,54 @@ func TestTier1_TextAlignStartEqualsLeft(t *testing.T) {
 	}
 }
 
+func TestTier1_TransformSkipsBox(t *testing.T) {
+	// A CSS-transformed element: its rect is post-transform, so width/height
+	// must not be compared (would be a false diff).
+	want := map[string]figmaTarget{
+		"x": {typ: "FRAME", name: "X", box: figma.Bounds{Width: 200, Height: 100}, tokens: &Tokens{Fill: "#fff"}},
+	}
+	got := map[string]render.DOMElement{
+		"x": {FigmaNode: "x", Box: render.Box{Width: 400, Height: 200}, Styles: map[string]string{
+			"background-color": "rgb(255,255,255)",
+			"transform":        "matrix(2, 0, 0, 2, 0, 0)",
+		}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 0 {
+		t.Errorf("transformed element should not flag width/height, got %+v", byEl)
+	}
+}
+
+func TestTier1_MissingShadow(t *testing.T) {
+	want := map[string]figmaTarget{
+		"c": {typ: "FRAME", name: "Card", tokens: &Tokens{Shadow: true}},
+	}
+	got := map[string]render.DOMElement{
+		"c": {FigmaNode: "c", Styles: map[string]string{"box-shadow": "none"}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 1 || byEl[0].Diffs[0].Prop != "box-shadow" {
+		t.Errorf("expected missing box-shadow diff, got %+v", byEl)
+	}
+	// Present shadow → no diff.
+	got["c"].Styles["box-shadow"] = "rgba(0,0,0,0.1) 0px 4px 8px 0px"
+	if b, _ := tier1Diff(want, got); len(b) != 0 {
+		t.Errorf("present shadow should not flag, got %+v", b)
+	}
+}
+
+func TestTier1_LetterSpacingNormalIsZero(t *testing.T) {
+	want := map[string]figmaTarget{
+		"t": {typ: "TEXT", name: "T", tokens: &Tokens{LetterSpacing: ptr(0.0)}},
+	}
+	got := map[string]render.DOMElement{
+		"t": {FigmaNode: "t", Styles: map[string]string{"letter-spacing": "normal"}},
+	}
+	if b, _ := tier1Diff(want, got); len(b) != 0 {
+		t.Errorf("letter-spacing normal == 0 should not flag, got %+v", b)
+	}
+}
+
 func TestCanonColor(t *testing.T) {
 	cases := []struct {
 		a, b string

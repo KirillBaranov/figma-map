@@ -258,7 +258,12 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 			cmp("line-height", el.Styles["line-height"], *t.LineHeight, tolSize)
 		}
 		if t.LetterSpacing != nil {
-			cmp("letter-spacing", el.Styles["letter-spacing"], *t.LetterSpacing, tolSize)
+			// CSS "normal" letter-spacing means 0.
+			ls := el.Styles["letter-spacing"]
+			if strings.TrimSpace(ls) == "normal" {
+				ls = "0px"
+			}
+			cmp("letter-spacing", ls, *t.LetterSpacing, tolSize)
 		}
 		if t.TextAlign != "" {
 			if want, got := normalizeAlign(t.TextAlign), normalizeAlign(el.Styles["text-align"]); want != got {
@@ -296,19 +301,39 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 		cmp("padding-bottom", el.Styles["padding-bottom"], t.Padding.Bottom, tolSpacing)
 		cmp("padding-left", el.Styles["padding-left"], t.Padding.Left, tolSpacing)
 	}
-	// Box size (containers only; text auto-sizes and would be noisy). Compares
-	// the Figma node's bounds against the rendered element's box.
-	if ft.box.Width > 0 {
-		if is, should, bad := cmpDim(el.Box.Width, ft.box.Width, tolBox); bad {
-			addAdv("width", is, should)
-		}
+	// Drop shadow: report only a missing shadow (design has one, impl doesn't) —
+	// matching exact shadow geometry is too noisy.
+	if t.Shadow && !hasShadow(el.Styles["box-shadow"]) {
+		add("box-shadow", "none", "drop shadow")
 	}
-	if ft.box.Height > 0 {
-		if is, should, bad := cmpDim(el.Box.Height, ft.box.Height, tolBox); bad {
-			addAdv("height", is, should)
+	// Box size (containers only; text auto-sizes and would be noisy). Skip when
+	// the element is CSS-transformed: getBoundingClientRect is post-transform
+	// while computed styles are pre-transform, so the box can't be trusted.
+	if !isTransformed(el.Styles["transform"]) {
+		if ft.box.Width > 0 {
+			if is, should, bad := cmpDim(el.Box.Width, ft.box.Width, tolBox); bad {
+				addAdv("width", is, should)
+			}
+		}
+		if ft.box.Height > 0 {
+			if is, should, bad := cmpDim(el.Box.Height, ft.box.Height, tolBox); bad {
+				addAdv("height", is, should)
+			}
 		}
 	}
 	return diffs
+}
+
+// isTransformed reports whether a computed transform is anything but identity.
+func isTransformed(v string) bool {
+	v = strings.TrimSpace(v)
+	return v != "" && v != "none"
+}
+
+// hasShadow reports whether a computed box-shadow is present.
+func hasShadow(v string) bool {
+	v = strings.TrimSpace(v)
+	return v != "" && v != "none"
 }
 
 // normalizeAlign maps Figma and CSS alignment values to a common form.

@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -82,7 +83,7 @@ func (c *Client) VisionJSON(ctx context.Context, prompt string, images []Image, 
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	req := openai.ChatCompletionRequest{
 		Model:       c.model,
 		Temperature: 0,
 		MaxTokens:   1024,
@@ -95,7 +96,9 @@ func (c *Client) VisionJSON(ctx context.Context, prompt string, images []Image, 
 				Strict: true,
 			},
 		},
-	})
+	}
+
+	resp, err := c.chatWithRetry(ctx, req)
 	if err != nil {
 		return fmt.Errorf("vision call: %w", err)
 	}
@@ -103,4 +106,47 @@ func (c *Client) VisionJSON(ctx context.Context, prompt string, images []Image, 
 		return fmt.Errorf("vision call: empty response")
 	}
 	return schema.Unmarshal(resp.Choices[0].Message.Content, out)
+}
+
+// maxAttempts is the total number of chat attempts (1 try + retries).
+const maxAttempts = 4
+
+// chatWithRetry calls the API, retrying transient failures (rate limits, 5xx,
+// network) with exponential backoff. Non-transient errors return immediately.
+func (c *Client) chatWithRetry(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<(attempt-1)) * time.Second // 1s, 2s, 4s
+			select {
+			case <-ctx.Done():
+				return openai.ChatCompletionResponse{}, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+		resp, err := c.api.CreateChatCompletion(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil || !retryable(err) {
+			return openai.ChatCompletionResponse{}, err
+		}
+	}
+	return openai.ChatCompletionResponse{}, lastErr
+}
+
+// retryable reports whether an API error is worth retrying.
+func retryable(err error) bool {
+	var apiErr *openai.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.HTTPStatusCode {
+		case 408, 429, 500, 502, 503, 504:
+			return true
+		}
+		return false
+	}
+	// Network/transport errors (no HTTP status) are transient.
+	var reqErr *openai.RequestError
+	return errors.As(err, &reqErr)
 }

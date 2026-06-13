@@ -18,6 +18,7 @@ type Tokens struct {
 	Padding      *figma.Padding `json:"padding,omitempty"`
 	Gap          *float64       `json:"gap,omitempty"`
 	Direction    string         `json:"direction,omitempty"` // row | column (from auto-layout)
+	Shadow       bool           `json:"shadow,omitempty"`    // has a drop shadow
 
 	// Typography (TEXT nodes).
 	FontSize      *float64 `json:"fontSize,omitempty"`
@@ -95,6 +96,12 @@ func tokensFromStyle(st *figma.Style) *Tokens {
 	if st.Padding != nil {
 		t.Padding = st.Padding
 	}
+	for _, e := range st.Effects {
+		if e.Type == "DROP_SHADOW" {
+			t.Shadow = true
+			break
+		}
+	}
 
 	if t.isEmpty() {
 		return nil
@@ -105,7 +112,7 @@ func tokensFromStyle(st *figma.Style) *Tokens {
 func (t *Tokens) isEmpty() bool {
 	return t.Fill == "" && t.Stroke == "" && t.StrokeWeight == nil && t.Radius == nil &&
 		t.Opacity == nil && t.Padding == nil && t.Gap == nil && t.Direction == "" &&
-		t.FontSize == nil && t.FontFamily == "" && t.FontWeight == nil &&
+		!t.Shadow && t.FontSize == nil && t.FontFamily == "" && t.FontWeight == nil &&
 		t.LineHeight == nil && t.LetterSpacing == nil && t.TextAlign == ""
 }
 
