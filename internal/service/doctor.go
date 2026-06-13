@@ -34,7 +34,7 @@ func (s *Service) Doctor() Report {
 		r.Checks = append(r.Checks, c)
 	}
 
-	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), s.bridge.Ping())
+	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), s.src.Ping())
 	add("headless chrome", findChrome())
 	add(fmt.Sprintf("storybook (%s)", s.cfg.Storybook), pingStorybook(s.cfg.Storybook))
 

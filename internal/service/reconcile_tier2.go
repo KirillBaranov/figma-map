@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/kirillbaranov/figma-map/internal/figma"
 	"github.com/kirillbaranov/figma-map/internal/llm"
@@ -39,27 +37,19 @@ func (s *Service) semanticDiff(ctx context.Context, key string, frame *figma.Nod
 	if err != nil {
 		return nil, err
 	}
-	design, err := s.bridge.Screenshot(key, frame.ID, figma.ScreenshotOpts{Scale: 2})
+	design, err := s.src.Screenshot(key, frame.ID, figma.ScreenshotOpts{Scale: 2})
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err := client.Vision(ctx, semanticPrompt, []llm.Image{
-		{Label: "DESIGN:", PNG: design},
-		{Label: "RENDERED:", PNG: rendered},
-	})
-	if err != nil {
-		return nil, err
-	}
-	m := jsonObjRe.FindString(reply)
-	if m == "" {
-		return nil, fmt.Errorf("no JSON in reply")
-	}
 	var parsed struct {
 		Findings []SemanticFinding `json:"findings"`
 	}
-	if err := json.Unmarshal([]byte(m), &parsed); err != nil {
-		return nil, fmt.Errorf("parse semantic findings: %w", err)
+	if err := client.VisionJSON(ctx, semanticPrompt, []llm.Image{
+		{Label: "DESIGN:", PNG: design},
+		{Label: "RENDERED:", PNG: rendered},
+	}, "semantic_diff", &parsed); err != nil {
+		return nil, err
 	}
 	return parsed.Findings, nil
 }

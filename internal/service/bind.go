@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -44,7 +43,7 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 		return BindResult{}, err
 	}
 
-	doc, err := s.bridge.Document(key)
+	doc, err := s.src.Document(key)
 	if err != nil {
 		return BindResult{}, err
 	}
@@ -55,7 +54,7 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 	matched := map[string]matchedComponent{}
 
 	for _, section := range sections {
-		png, err := s.bridge.Screenshot(key, section.ID, figma.ScreenshotOpts{Scale: 2})
+		png, err := s.src.Screenshot(key, section.ID, figma.ScreenshotOpts{Scale: 2})
 		if err != nil {
 			p.emit(fmt.Sprintf("  ! %s: screenshot failed: %v", section.Name, err))
 			continue
@@ -159,44 +158,32 @@ Story (variant) names: %s
 
 These story names mix one or more prop dimensions (e.g. visual variant and size). Group them into the component's actual props using the conventions of a typical React component library (e.g. shadcn/ui: a "Primary" story usually maps to variant="default", "Large" to size="lg", "Small" to size="sm").
 
-Return JSON only:
-{ "props": { "<codePropName>": { "values": ["<codeValue>", ...] } } }
-
 Rules:
-- values must be the CODE prop values, not the story names.
-- list the default value first.
+- values must be the CODE prop values (as strings), not the story names.
+- list the default value first within each prop.
 - omit props you cannot infer.`
 
+// inferResult is the structured-output shape (array, not map, for strict schema).
 type inferResult struct {
-	Props map[string]struct {
-		// Values may arrive as strings, booleans, or numbers (e.g. a boolean
-		// "disabled" prop), so accept any JSON scalar and stringify.
-		Values []any `json:"values"`
+	Props []struct {
+		Name   string   `json:"name"`
+		Values []string `json:"values"`
 	} `json:"props"`
 }
 
 // inferProps asks the LLM to turn variant names into a code prop schema.
-func inferProps(ctx context.Context, client *llm.Client, component string, variants []string) (map[string]binding.Prop, error) {
+func inferProps(ctx context.Context, model llm.VisionModel, component string, variants []string) (map[string]binding.Prop, error) {
 	prompt := fmt.Sprintf(inferPromptTmpl, component, strings.Join(variants, ", "))
-	reply, err := client.Vision(ctx, prompt, nil)
-	if err != nil {
+	var ir inferResult
+	if err := model.VisionJSON(ctx, prompt, nil, "prop_schema", &ir); err != nil {
 		return nil, err
 	}
-	m := jsonObjRe.FindString(reply)
-	if m == "" {
-		return nil, fmt.Errorf("no JSON in reply")
-	}
-	var ir inferResult
-	if err := json.Unmarshal([]byte(m), &ir); err != nil {
-		return nil, fmt.Errorf("parse infer result: %w", err)
-	}
 	props := map[string]binding.Prop{}
-	for name, pr := range ir.Props {
-		values := make([]string, 0, len(pr.Values))
-		for _, v := range pr.Values {
-			values = append(values, fmt.Sprintf("%v", v))
+	for _, pr := range ir.Props {
+		if pr.Name == "" || len(pr.Values) == 0 {
+			continue
 		}
-		props[name] = binding.Prop{Values: values}
+		props[pr.Name] = binding.Prop{Values: pr.Values}
 	}
 	return props, nil
 }

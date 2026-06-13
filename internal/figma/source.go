@@ -42,6 +42,8 @@ type ScreenshotOpts struct {
 // Source abstracts access to Figma data. Implementations are responsible for
 // transport and for mapping their wire format into the domain Node model.
 type Source interface {
+	// Ping reports whether the source is reachable.
+	Ping() error
 	// Files lists the Figma files currently reachable through the source.
 	Files() ([]File, error)
 	// Document returns the current page's node tree for the given file.

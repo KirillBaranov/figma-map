@@ -39,11 +39,11 @@ func (s *Service) ExportAssets(_ context.Context, fileKey, nodeID, format, outDi
 	if err != nil {
 		return ExportResult{}, err
 	}
-	node, err := s.bridge.Node(key, nodeID)
+	node, err := s.src.Node(key, nodeID)
 	if err != nil {
 		return ExportResult{}, err
 	}
-	data, err := s.bridge.Screenshot(key, nodeID, figma.ScreenshotOpts{Format: format, Scale: 2})
+	data, err := s.src.Screenshot(key, nodeID, figma.ScreenshotOpts{Format: format, Scale: 2})
 	if err != nil {
 		return ExportResult{}, err
 	}

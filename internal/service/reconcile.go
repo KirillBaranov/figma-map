@@ -66,7 +66,7 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 	if err != nil {
 		return Diff{}, err
 	}
-	frame, err := s.bridge.Node(key, nodeID)
+	frame, err := s.src.Node(key, nodeID)
 	if err != nil {
 		return Diff{}, err
 	}

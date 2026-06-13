@@ -41,7 +41,7 @@ func (s *Service) GetTokens(_ context.Context, fileKey, nodeID string) (TokensRe
 	if err != nil {
 		return TokensResult{}, err
 	}
-	node, err := s.bridge.Node(key, nodeID)
+	node, err := s.src.Node(key, nodeID)
 	if err != nil {
 		return TokensResult{}, err
 	}

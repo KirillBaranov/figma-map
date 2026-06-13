@@ -32,7 +32,7 @@ func (s *Service) Inspect(_ context.Context, fileKey, nodeID string, withTokens 
 	if err != nil {
 		return InspectResult{}, err
 	}
-	node, err := s.bridge.Node(key, nodeID)
+	node, err := s.src.Node(key, nodeID)
 	if err != nil {
 		return InspectResult{}, err
 	}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -44,11 +43,11 @@ func (s *Service) Map(ctx context.Context, fileKey, bindingPath, catalogDir, nod
 		return MapResult{}, err
 	}
 
-	png, err := s.bridge.Screenshot(key, nodeID, figma.ScreenshotOpts{Scale: 2})
+	png, err := s.src.Screenshot(key, nodeID, figma.ScreenshotOpts{Scale: 2})
 	if err != nil {
 		return MapResult{}, err
 	}
-	node, err := s.bridge.Node(key, nodeID)
+	node, err := s.src.Node(key, nodeID)
 	if err != nil {
 		return MapResult{}, err
 	}
@@ -74,7 +73,7 @@ func (s *Service) Map(ctx context.Context, fileKey, bindingPath, catalogDir, nod
 
 // matchBound matches a rendered node against the binding's components and returns
 // the resolved component. Shared by Map and Plan.
-func matchBound(ctx context.Context, client *llm.Client, b binding.Binding, catalog storybook.Catalog, catalogDir string, node *figma.Node, png []byte) (binding.Component, string, float64, error) {
+func matchBound(ctx context.Context, client llm.VisionModel, b binding.Binding, catalog storybook.Catalog, catalogDir string, node *figma.Node, png []byte) (binding.Component, string, float64, error) {
 	candidates, err := boundRepresentatives(b, catalog, catalogDir)
 	if err != nil {
 		return binding.Component{}, "", 0, err
@@ -128,14 +127,21 @@ Component: %q
 Available props and allowed values (first is the default):
 %s
 
-Look at the image and choose the most likely value for each prop. If a prop's value is not clearly distinguishable, use its default.
+For each prop, choose the most likely value from its allowed values. If a value
+is not clearly distinguishable, use the default. Return one entry per prop.`
 
-Return JSON only: { "<propName>": "<chosenValue>", ... }`
+// propValues is the structured-output shape (array, not map, for strict schema).
+type propValues struct {
+	Values []struct {
+		Prop  string `json:"prop"`
+		Value string `json:"value"`
+	} `json:"values"`
+}
 
 // inferPropValues reads prop values off the instance image, constrained to the
 // binding schema. Values outside the allowed set or equal to the default are
 // dropped (defaults are implied).
-func inferPropValues(ctx context.Context, client *llm.Client, png []byte, comp binding.Component) (map[string]string, error) {
+func inferPropValues(ctx context.Context, model llm.VisionModel, png []byte, comp binding.Component) (map[string]string, error) {
 	if len(comp.Props) == 0 {
 		return nil, nil
 	}
@@ -143,21 +149,19 @@ func inferPropValues(ctx context.Context, client *llm.Client, png []byte, comp b
 	for name, p := range comp.Props {
 		fmt.Fprintf(&schema, "- %s: %s\n", name, strings.Join(p.Values, ", "))
 	}
-	reply, err := client.Vision(ctx, fmt.Sprintf(propValuePromptTmpl, comp.Symbol, schema.String()), []llm.Image{{PNG: png}})
-	if err != nil {
+	var pv propValues
+	if err := model.VisionJSON(ctx, fmt.Sprintf(propValuePromptTmpl, comp.Symbol, schema.String()),
+		[]llm.Image{{PNG: png}}, "prop_values", &pv); err != nil {
 		return nil, err
 	}
-	m := jsonObjRe.FindString(reply)
-	if m == "" {
-		return nil, fmt.Errorf("no JSON in reply")
-	}
-	var raw map[string]string
-	if err := json.Unmarshal([]byte(m), &raw); err != nil {
-		return nil, fmt.Errorf("parse prop values: %w", err)
+
+	chosen := map[string]string{}
+	for _, e := range pv.Values {
+		chosen[e.Prop] = e.Value
 	}
 	out := map[string]string{}
 	for name, p := range comp.Props {
-		v, ok := raw[name]
+		v, ok := chosen[name]
 		if !ok || v == "" || v == p.Default() {
 			continue
 		}

@@ -31,7 +31,7 @@ func (s *Service) Screenshot(_ context.Context, fileKey, nodeID string, scale fl
 	if scale <= 0 {
 		scale = 2
 	}
-	png, err := s.bridge.Screenshot(key, nodeID, figma.ScreenshotOpts{Format: "PNG", Scale: scale})
+	png, err := s.src.Screenshot(key, nodeID, figma.ScreenshotOpts{Format: "PNG", Scale: scale})
 	if err != nil {
 		return ScreenshotResult{}, err
 	}

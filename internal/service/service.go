@@ -10,24 +10,24 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 
 	"github.com/kirillbaranov/figma-map/internal/config"
 	"github.com/kirillbaranov/figma-map/internal/figma"
 	"github.com/kirillbaranov/figma-map/internal/llm"
 )
 
-// Service is the entry point for every operation.
+// Service is the entry point for every operation. src and llm are interfaces so
+// tests can inject fakes; production wires the bridge and the OpenAI client.
 type Service struct {
-	cfg    config.Config
-	bridge *figma.Bridge
-	llm    *llm.Client // built lazily by llmClient
+	cfg config.Config
+	src figma.Source
+	llm llm.VisionModel // built lazily by llmClient
 }
 
 // New constructs a Service. It never requires an API key — deterministic
 // operations run without one.
 func New(cfg config.Config) *Service {
-	return &Service{cfg: cfg, bridge: figma.NewBridge(cfg.Bridge)}
+	return &Service{cfg: cfg, src: figma.NewBridge(cfg.Bridge)}
 }
 
 // Config exposes the loaded configuration (read-only use by callers).
@@ -59,7 +59,7 @@ func (p Progress) emit(msg string) {
 }
 
 // llmClient lazily builds the vision client, erroring if no API key is set.
-func (s *Service) llmClient() (*llm.Client, error) {
+func (s *Service) llmClient() (llm.VisionModel, error) {
 	if s.llm != nil {
 		return s.llm, nil
 	}
@@ -84,7 +84,7 @@ func (s *Service) resolveFileKey(flag string) (string, error) {
 	if s.cfg.FileKey != "" {
 		return s.cfg.FileKey, nil
 	}
-	files, err := s.bridge.Files()
+	files, err := s.src.Files()
 	if err != nil {
 		return "", err
 	}
@@ -97,9 +97,6 @@ func (s *Service) resolveFileKey(flag string) (string, error) {
 		return "", fmt.Errorf("multiple files connected; pass --file <fileKey>")
 	}
 }
-
-// jsonObjRe extracts the first {...} block from an LLM reply.
-var jsonObjRe = regexp.MustCompile(`(?s)\{.*\}`)
 
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
