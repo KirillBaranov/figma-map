@@ -13,3 +13,7 @@
 
 # OS
 .DS_Store
+
+# Benchmark working dir (regenerable) + scorer binary
+/bench/work/
+/bin-bench
