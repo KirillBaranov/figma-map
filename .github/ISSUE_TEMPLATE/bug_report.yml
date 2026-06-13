@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a problem with figma-map
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command(s) you ran.
+      placeholder: |
+        1. figma-map scan --project ...
+        2. figma-map bind
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`figma-map doctor` output"
+      description: Paste the output (redact anything sensitive).
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: figma-map version
+      description: Output of `figma-map --version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / arch
+      placeholder: macOS 14 / arm64
+    validations:
+      required: true
