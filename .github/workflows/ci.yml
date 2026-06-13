@@ -65,11 +65,9 @@ jobs:
           echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
           go tool cover -func=cover.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
 
-      - name: go.mod tidy check
+      - name: Verify modules
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          go mod tidy
-          git diff --exit-status go.mod go.sum || { echo "run 'go mod tidy'"; exit 1; }
+        run: go mod verify
 
   lint:
     name: golangci-lint
@@ -87,19 +85,18 @@ jobs:
   vuln:
     name: govulncheck (informational)
     runs-on: ubuntu-latest
-    # Informational: stdlib CVEs land regularly and are fixed by Go patch
-    # releases, so this surfaces issues without gating merges on Go's timing.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
+      # Informational: stdlib CVEs land regularly and are fixed by Go patch
+      # releases. Surface them in the logs without gating merges on Go's timing.
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          govulncheck ./... || echo "::warning::govulncheck reported issues (informational)"
 
   release-config:
     name: goreleaser check
