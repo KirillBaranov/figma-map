@@ -192,6 +192,11 @@ doesn't guess (see [ADR-0001](docs/adr/ADR-0001-dumb-tool.md)).
 Because the feedback is exact numbers tied to specific elements, the loop
 converges — this is what makes an otherwise-unreliable agent reliable.
 
+A ready-made agent skill ships at
+[`.claude/skills/figma-map/SKILL.md`](.claude/skills/figma-map/SKILL.md): it
+teaches an agent the loop, the `data-figma-node` contract, and when to use each
+operation. Claude Code picks it up automatically when figma-map work comes up.
+
 ## Configuration
 
 See [`figma-map.example.yaml`](figma-map.example.yaml). The API key is **never**
