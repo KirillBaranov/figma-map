@@ -97,6 +97,82 @@ func TestTier1_UnmeasuredWhenNoDOMMatch(t *testing.T) {
 	}
 }
 
+func TestTier1_ExtendedProperties(t *testing.T) {
+	want := map[string]figmaTarget{
+		"box": {typ: "FRAME", name: "Box", bounds: figma.Bounds{Width: 200, Height: 100}, tokens: &Tokens{
+			Opacity:      ptr(0.5),
+			Stroke:       "#000000",
+			StrokeWeight: ptr(2.0),
+		}},
+	}
+	got := map[string]render.DOMElement{
+		"box": {FigmaNode: "box",
+			Box: render.Box{Width: 150, Height: 100}, // width off by 50, height ok
+			Styles: map[string]string{
+				"opacity":          "1",              // 1 vs 0.5 → diff
+				"border-top-color": "rgb(255, 0, 0)", // wrong color
+				"border-top-width": "2px",            // ok
+			}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 1 {
+		t.Fatalf("want 1 element, got %d", len(byEl))
+	}
+	props := map[string]FieldDiff{}
+	for _, d := range byEl[0].Diffs {
+		props[d.Prop] = d
+	}
+	for _, p := range []string{"opacity", "border-color", "width"} {
+		if _, ok := props[p]; !ok {
+			t.Errorf("expected diff for %s; got %v", p, props)
+		}
+	}
+	if _, ok := props["height"]; ok {
+		t.Error("height matched, should not be flagged")
+	}
+	if _, ok := props["border-width"]; ok {
+		t.Error("border-width matched, should not be flagged")
+	}
+}
+
+func TestTier1_NoBorderFalsePositive(t *testing.T) {
+	// The bridge reports strokeWeight:1 even on borderless nodes; with no stroke
+	// color we must NOT flag a border-width difference.
+	want := map[string]figmaTarget{
+		"b": {typ: "FRAME", name: "B", tokens: &Tokens{StrokeWeight: ptr(1.0)}}, // Stroke == ""
+	}
+	got := map[string]render.DOMElement{
+		"b": {FigmaNode: "b", Styles: map[string]string{"border-top-width": "0px"}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 0 {
+		t.Errorf("borderless node should produce no diff, got %+v", byEl)
+	}
+}
+
+func TestTier1_TextAlignStartEqualsLeft(t *testing.T) {
+	want := map[string]figmaTarget{
+		"t": {typ: "TEXT", name: "T", tokens: &Tokens{TextAlign: "LEFT", LineHeight: ptr(24.0)}},
+	}
+	got := map[string]render.DOMElement{
+		"t": {FigmaNode: "t", Styles: map[string]string{
+			"text-align":  "start", // start == left → no diff
+			"line-height": "24px",
+		}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 0 {
+		t.Errorf("start should equal left, line-height ok; got %+v", byEl)
+	}
+
+	// And a real mismatch is caught.
+	got["t"].Styles["text-align"] = "center"
+	byEl2, _ := tier1Diff(want, got)
+	if len(byEl2) != 1 || byEl2[0].Diffs[0].Prop != "text-align" {
+		t.Errorf("expected text-align diff, got %+v", byEl2)
+	}
+}
+
 func TestCanonColor(t *testing.T) {
 	cases := []struct {
 		a, b string

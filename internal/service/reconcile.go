@@ -47,14 +47,16 @@ type Diff struct {
 // tolerances for deterministic comparison (sub-pixel/font metrics make exact
 // equality unattainable; the target is spec-perfect within these bounds).
 const (
-	tolSize    = 0.5 // px: font-size, radius
+	tolSize    = 0.5 // px: font-size, radius, border, line-height
 	tolSpacing = 1.0 // px: padding, gap
+	tolBox     = 2.0 // px: element width/height (layout rounding)
 )
 
 type figmaTarget struct {
 	tokens *Tokens
 	typ    string
 	name   string
+	bounds figma.Bounds
 }
 
 // Reconcile compares a Figma node against the agent's rendered output. story or
@@ -125,7 +127,7 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 // collectTargets walks the frame and records every node that carries tokens.
 func collectTargets(n *figma.Node, out map[string]figmaTarget) {
 	if t := tokensFromStyle(n.Styles); t != nil {
-		out[n.ID] = figmaTarget{tokens: t, typ: n.Type, name: n.Name}
+		out[n.ID] = figmaTarget{tokens: t, typ: n.Type, name: n.Name, bounds: n.Bounds}
 	}
 	for i := range n.Children {
 		collectTargets(&n.Children[i], out)
@@ -163,6 +165,18 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 	t := ft.tokens
 	var diffs []FieldDiff
 	add := func(prop, is, should string) { diffs = append(diffs, FieldDiff{prop, is, should}) }
+	cmp := func(prop, css string, want, tol float64) {
+		if is, should, bad := cmpLen(css, want, tol); bad {
+			add(prop, is, should)
+		}
+	}
+
+	// opacity applies to any node type.
+	if t.Opacity != nil {
+		if is, should, bad := cmpScalar(el.Styles["opacity"], *t.Opacity, 0.02); bad {
+			add("opacity", is, should)
+		}
+	}
 
 	if ft.typ == "TEXT" {
 		if t.Fill != "" {
@@ -171,13 +185,22 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 			}
 		}
 		if t.FontSize != nil {
-			if is, should, bad := cmpLen(el.Styles["font-size"], *t.FontSize, tolSize); bad {
-				add("font-size", is, should)
-			}
+			cmp("font-size", el.Styles["font-size"], *t.FontSize, tolSize)
 		}
 		if t.FontWeight != nil {
 			if is, should, bad := cmpNum(el.Styles["font-weight"], *t.FontWeight); bad {
 				add("font-weight", is, should)
+			}
+		}
+		if t.LineHeight != nil {
+			cmp("line-height", el.Styles["line-height"], *t.LineHeight, tolSize)
+		}
+		if t.LetterSpacing != nil {
+			cmp("letter-spacing", el.Styles["letter-spacing"], *t.LetterSpacing, tolSize)
+		}
+		if t.TextAlign != "" {
+			if want, got := normalizeAlign(t.TextAlign), normalizeAlign(el.Styles["text-align"]); want != got {
+				add("text-align", got, want)
 			}
 		}
 		return diffs
@@ -189,29 +212,57 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 		}
 	}
 	if t.Radius != nil {
-		if is, should, bad := cmpLen(el.Styles["border-top-left-radius"], *t.Radius, tolSize); bad {
-			add("border-radius", is, should)
+		cmp("border-radius", el.Styles["border-top-left-radius"], *t.Radius, tolSize)
+	}
+	// Border: only when an actual stroke paint exists (the bridge reports
+	// strokeWeight:1 even on borderless nodes, so gate on the stroke color).
+	if t.Stroke != "" {
+		if is, should, bad := cmpColor(el.Styles["border-top-color"], t.Stroke); bad {
+			add("border-color", is, should)
+		}
+		if t.StrokeWeight != nil {
+			cmp("border-width", el.Styles["border-top-width"], *t.StrokeWeight, tolSize)
 		}
 	}
 	if t.Gap != nil {
 		domGap := firstNonEmpty(el.Styles["gap"], el.Styles["column-gap"], el.Styles["row-gap"])
-		if is, should, bad := cmpLen(domGap, *t.Gap, tolSpacing); bad {
-			add("gap", is, should)
-		}
+		cmp("gap", domGap, *t.Gap, tolSpacing)
 	}
 	if t.Padding != nil {
-		for prop, want := range map[string]float64{
-			"padding-top":    t.Padding.Top,
-			"padding-right":  t.Padding.Right,
-			"padding-bottom": t.Padding.Bottom,
-			"padding-left":   t.Padding.Left,
-		} {
-			if is, should, bad := cmpLen(el.Styles[prop], want, tolSpacing); bad {
-				add(prop, is, should)
-			}
+		cmp("padding-top", el.Styles["padding-top"], t.Padding.Top, tolSpacing)
+		cmp("padding-right", el.Styles["padding-right"], t.Padding.Right, tolSpacing)
+		cmp("padding-bottom", el.Styles["padding-bottom"], t.Padding.Bottom, tolSpacing)
+		cmp("padding-left", el.Styles["padding-left"], t.Padding.Left, tolSpacing)
+	}
+	// Box size (containers only; text auto-sizes and would be noisy). Compares
+	// the Figma node's bounds against the rendered element's box.
+	if ft.bounds.Width > 0 {
+		if is, should, bad := cmpDim(el.Box.Width, ft.bounds.Width, tolBox); bad {
+			add("width", is, should)
+		}
+	}
+	if ft.bounds.Height > 0 {
+		if is, should, bad := cmpDim(el.Box.Height, ft.bounds.Height, tolBox); bad {
+			add("height", is, should)
 		}
 	}
 	return diffs
+}
+
+// normalizeAlign maps Figma and CSS alignment values to a common form.
+func normalizeAlign(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "left", "start", "":
+		return "left"
+	case "right", "end":
+		return "right"
+	case "center", "centre":
+		return "center"
+	case "justified", "justify":
+		return "justify"
+	default:
+		return strings.ToLower(s)
+	}
 }
 
 // --- canonicalization & comparison ---
@@ -225,6 +276,27 @@ func cmpLen(css string, want, tol float64) (is, should string, bad bool) {
 	}
 	if math.Abs(got-want) > tol {
 		return fmt.Sprintf("%gpx", got), should, true
+	}
+	return "", "", false
+}
+
+// cmpScalar compares a unitless CSS number (e.g. opacity) within tol.
+func cmpScalar(css string, want, tol float64) (is, should string, bad bool) {
+	should = strconv.FormatFloat(want, 'f', -1, 64)
+	got, err := strconv.ParseFloat(strings.TrimSpace(css), 64)
+	if err != nil {
+		return strings.TrimSpace(css), should, true
+	}
+	if math.Abs(got-want) > tol {
+		return strconv.FormatFloat(got, 'f', -1, 64), should, true
+	}
+	return "", "", false
+}
+
+// cmpDim compares two pixel dimensions (both already numeric) within tol.
+func cmpDim(got, want, tol float64) (is, should string, bad bool) {
+	if math.Abs(got-want) > tol {
+		return fmt.Sprintf("%gpx", got), fmt.Sprintf("%gpx", want), true
 	}
 	return "", "", false
 }

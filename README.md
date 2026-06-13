@@ -254,6 +254,11 @@ Honest gaps in the current release, not hidden behaviour:
   `data-figma-node` are diffed; others are reported `unmeasured`, never assumed
   correct. The goal is *spec-perfect* (every measured property matches the
   design), not pixel-raster identity, which font rendering makes unattainable.
+- **reconcile property coverage**: color/background, font size/weight,
+  line-height, letter-spacing, text-align, border radius/width/color, padding,
+  gap, opacity, and element width/height. Not yet checked: margins, box-shadow,
+  and gradient fills. Width/height can be content-driven, so treat those diffs as
+  advisory.
 - **Responsive is per-frame** — reconcile checks against one frame at the frame's
   width; behavior between breakpoints the design doesn't specify is out of scope.
 - **The bridge requires Figma desktop open** with the plugin running. A REST

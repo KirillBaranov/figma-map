@@ -32,7 +32,8 @@ type DOMElement struct {
 // extractJS collects every [data-figma-node] element's computed styles and box.
 const extractJS = `(() => {
   const props = ['background-color','color','font-size','font-weight','font-family',
-    'line-height','border-top-left-radius','padding-top','padding-right',
+    'line-height','letter-spacing','text-align','border-top-left-radius',
+    'border-top-width','border-top-color','padding-top','padding-right',
     'padding-bottom','padding-left','gap','column-gap','row-gap','opacity'];
   const out = [];
   document.querySelectorAll('[data-figma-node]').forEach(el => {

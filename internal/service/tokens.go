@@ -20,11 +20,12 @@ type Tokens struct {
 	Direction    string         `json:"direction,omitempty"` // row | column (from auto-layout)
 
 	// Typography (TEXT nodes).
-	FontSize   *float64 `json:"fontSize,omitempty"`
-	FontFamily string   `json:"fontFamily,omitempty"`
-	FontWeight *float64 `json:"fontWeight,omitempty"`
-	LineHeight *float64 `json:"lineHeight,omitempty"`
-	TextAlign  string   `json:"textAlign,omitempty"`
+	FontSize      *float64 `json:"fontSize,omitempty"`
+	FontFamily    string   `json:"fontFamily,omitempty"`
+	FontWeight    *float64 `json:"fontWeight,omitempty"`
+	LineHeight    *float64 `json:"lineHeight,omitempty"`
+	LetterSpacing *float64 `json:"letterSpacing,omitempty"`
+	TextAlign     string   `json:"textAlign,omitempty"`
 }
 
 // TokensResult is the `tokens` operation output.
@@ -79,6 +80,9 @@ func tokensFromStyle(st *figma.Style) *Tokens {
 	if st.LineHeight != nil && st.LineHeight.Unit == "PIXELS" {
 		t.LineHeight = ptr(st.LineHeight.Value)
 	}
+	if st.LetterSpacing != nil && st.LetterSpacing.Unit == "PIXELS" {
+		t.LetterSpacing = ptr(st.LetterSpacing.Value)
+	}
 	if st.AutoLayout != nil {
 		t.Gap = ptr(st.AutoLayout.Gap)
 		switch st.AutoLayout.Direction {
@@ -102,7 +106,7 @@ func (t *Tokens) isEmpty() bool {
 	return t.Fill == "" && t.Stroke == "" && t.StrokeWeight == nil && t.Radius == nil &&
 		t.Opacity == nil && t.Padding == nil && t.Gap == nil && t.Direction == "" &&
 		t.FontSize == nil && t.FontFamily == "" && t.FontWeight == nil &&
-		t.LineHeight == nil && t.TextAlign == ""
+		t.LineHeight == nil && t.LetterSpacing == nil && t.TextAlign == ""
 }
 
 // firstSolid returns the hex color of the first SOLID paint, or "".
