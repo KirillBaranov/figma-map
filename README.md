@@ -136,10 +136,61 @@ figma-map map 13:1077
 | `figma-map doctor` | Check bridge, Chrome, Storybook, and API key | — |
 | `figma-map scan` | Screenshot Storybook stories → `catalog/` | — |
 | `figma-map bind` | Match Figma sections to the catalog + infer prop schemas → `figma-map.binding.yaml` | ✓ once |
+| `figma-map list` | List the components in a binding | — |
+| `figma-map tokens <nodeId>` | Exact design tokens (color/spacing/font/radius) for a node | — |
+| `figma-map inspect <nodeId>` | Node subtree: structure, text, bounds, optional `--tokens` | — |
+| `figma-map screenshot <nodeId>` | Render a node to PNG (`--out` to save) | — |
+| `figma-map export-assets <nodeId>` | Export a node to SVG/PNG/JPG | — |
 | `figma-map map <nodeId>` | Identify a node's component + props → JSX | ✓ cheap |
+| `figma-map plan <frameId>` | Map every instance in a frame → buildable spec | ✓ cheap |
+| `figma-map reconcile <nodeId>` | Diff rendered output vs the design (deterministic) | — / opt-in |
+| `figma-map mcp` | Run as an MCP server over stdio (for agents) | — |
 
-Pass `--file <fileKey>` to any command when multiple Figma files are connected.
-Run `figma-map <command> --help` for full flags.
+Pass `--file <fileKey>` to any command when multiple Figma files are connected,
+and `--json` for machine-readable output. Run `figma-map <command> --help` for
+full flags.
+
+## Agent / MCP integration
+
+figma-map is built to be driven by an AI coding agent — point it at a Figma frame
+and have it build the page, verifying against the design in a loop. Every command
+above is also an **MCP tool** (same names, same parameters): the CLI and the MCP
+server are generated from one registry, so they never drift.
+
+Configure your agent (Claude Code, Cursor, …):
+
+```json
+{ "mcpServers": { "figma-map": { "command": "figma-map", "args": ["mcp"] } } }
+```
+
+### The loop: build a page from a mockup
+
+The agent owns the loop; figma-map is a deterministic tool — it measures, it
+doesn't guess (see [ADR-0001](docs/adr/ADR-0001-dumb-tool.md)).
+
+1. **`plan <frameId>`** → a buildable spec: layout, each component instance mapped
+   to your code (import + props), exact tokens, and an honest list of what
+   couldn't be mapped.
+2. The agent **writes the code**, stamping each element with
+   `data-figma-node="<id>"` so it can be measured later. Unmapped pieces are
+   hand-built from `tokens`; assets come from `export-assets` (not regenerated).
+3. The agent **renders** it (a Storybook story or a dev-server URL).
+4. **`reconcile <frameId> --story <id>`** (or `--url`) → figma-map renders the
+   implementation, reads its DOM computed styles, and diffs them against the
+   design's exact tokens, returning **per-element is/should numbers**:
+
+   ```jsonc
+   { "match": false, "remaining": 2, "byElement": [
+       { "nodeId": "55:1140", "name": "CTA", "diffs": [
+           { "prop": "background-color", "is": "rgb(31,41,55)", "should": "#18181b" },
+           { "prop": "padding-left", "is": "12px", "should": "16px" } ] } ] }
+   ```
+5. The agent fixes the exact properties and loops from step 3 until
+   `match: true`. Add `--semantic` for an LLM check of missing elements / wrong
+   assets that numbers can't catch.
+
+Because the feedback is exact numbers tied to specific elements, the loop
+converges — this is what makes an otherwise-unreliable agent reliable.
 
 ## Configuration
 
@@ -160,21 +211,26 @@ llm:
 ## Architecture
 
 ```text
-cmd/                 cobra subcommands (doctor, scan, bind, map)
+cmd/                 cobra root + `figma-map mcp`
 internal/
+  op/                operation registry — one declaration → CLI command + MCP tool
+  clibind/           binds an input struct to cobra flags/args (same tags as MCP)
+  service/           all logic (deterministic-first; lazy LLM)
   config/            figma-map.yaml + env override
-  figma/             Source interface + bridge (/rpc) backend
+  figma/             Source interface + bridge backend; node tokens (Style)
   storybook/         index.json → catalog; chromedp screenshots; import parsing
+  render/            chromedp DOM extraction (computed styles) + screenshots
   matcher/           Matcher interface + vision implementation
   binding/           figma-map.binding.yaml model (load/save)
   codegen/           binding + props → JSX
   llm/               OpenAI-compatible vision client (configurable base URL)
 ```
 
-The `figma.Source` and `matcher.Matcher` interfaces are deliberate extension
-seams. A Figma REST backend (for CI, where no desktop bridge runs) and an
-embedding-based retriever (for large libraries) can be added without touching
-callers.
+Each operation is declared once in `internal/op`; the CLI subcommand and the MCP
+tool are both generated from it, so they cannot drift (enforced by a convergence
+test). The `figma.Source` and `matcher.Matcher` interfaces are extension seams: a
+Figma REST backend (for CI) and an embedding-based retriever (for large
+libraries) can be added without touching callers.
 
 ## Limitations
 
@@ -189,6 +245,12 @@ Honest gaps in the current release, not hidden behaviour:
   relative. Adjust in the binding or normalize to your alias.
 - **Static screenshots only** — hover/focus/active states are not observable, so
   variants differing only by interaction state cannot be distinguished.
+- **reconcile measures tagged elements** — only DOM nodes carrying
+  `data-figma-node` are diffed; others are reported `unmeasured`, never assumed
+  correct. The goal is *spec-perfect* (every measured property matches the
+  design), not pixel-raster identity, which font rendering makes unattainable.
+- **Responsive is per-frame** — reconcile checks against one frame at the frame's
+  width; behavior between breakpoints the design doesn't specify is out of scope.
 - **The bridge requires Figma desktop open** with the plugin running. A REST
   backend for headless/CI use is a planned `figma.Source` implementation.
 
