@@ -33,6 +33,11 @@ func ensureBrowser() context.Context {
 		if path := os.Getenv("CHROME_PATH"); path != "" {
 			opts = append(opts, chromedp.ExecPath(path))
 		}
+		// CI containers lack a usable Chrome sandbox; disable it there only
+		// (local runs keep the sandbox, rendering untrusted URLs more safely).
+		if os.Getenv("CI") != "" {
+			opts = append(opts, chromedp.NoSandbox)
+		}
 		alloc, _ := chromedp.NewExecAllocator(context.Background(), opts...)
 		browserCtx, _ = chromedp.NewContext(alloc)
 	}
