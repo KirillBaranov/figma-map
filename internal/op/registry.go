@@ -33,6 +33,7 @@ func All() []Registrar {
 		exportAssetsOp,
 		mapOp,
 		planOp,
+		reconcileOp,
 	}
 }
 
@@ -289,6 +290,50 @@ var planOp = Op[planIn, service.Plan]{
 		}
 		for _, u := range p.Unmapped {
 			fmt.Fprintf(&b, "  – %s [%s] — %s\n", u.Name, u.Type, u.Reason)
+		}
+		return strings.TrimRight(b.String(), "\n")
+	},
+}
+
+// ---- reconcile ----
+
+type reconcileIn struct {
+	NodeID   string `json:"nodeId" jsonschema:"Figma node id to reconcile against" cli:"arg"`
+	File     string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Story    string `json:"story" jsonschema:"Storybook story id rendering the implementation"`
+	URL      string `json:"url" jsonschema:"URL rendering the implementation (alternative to story)"`
+	Image    string `json:"image" jsonschema:"flat image path (no-DOM fallback, Tier 2 only)"`
+	Semantic bool   `json:"semantic" jsonschema:"also run the Tier-2 semantic LLM check"`
+}
+
+var reconcileOp = Op[reconcileIn, service.Diff]{
+	Name:    "reconcile",
+	Summary: "Compare a Figma node against rendered output (deterministic token diff)",
+	Long: "reconcile renders the implementation (story or url), reads its DOM " +
+		"computed styles, and diffs them against the Figma node's exact tokens — " +
+		"returning per-element is/should numbers, not a vision guess. Elements must " +
+		"carry data-figma-node=\"<id>\" to be measured.",
+	Run: func(ctx context.Context, s *service.Service, in reconcileIn) (service.Diff, error) {
+		return s.Reconcile(ctx, in.File, in.NodeID, in.Story, in.URL, in.Image, in.Semantic)
+	},
+	Render: func(d service.Diff) string {
+		var b strings.Builder
+		if d.Match {
+			b.WriteString("✓ match (within tolerance)\n")
+		} else {
+			fmt.Fprintf(&b, "✗ %d difference(s)\n", d.Remaining)
+		}
+		for _, e := range d.ByElement {
+			fmt.Fprintf(&b, "  %s (%s):\n", e.Name, e.NodeID)
+			for _, f := range e.Diffs {
+				fmt.Fprintf(&b, "    %s: %s → should be %s\n", f.Prop, f.Is, f.Should)
+			}
+		}
+		for _, f := range d.Semantic {
+			fmt.Fprintf(&b, "  [%s/%s] %s\n", f.Kind, f.Severity, f.Detail)
+		}
+		if len(d.Unmeasured) > 0 {
+			fmt.Fprintf(&b, "  unmeasured (no data-figma-node match): %s\n", strings.Join(d.Unmeasured, ", "))
 		}
 		return strings.TrimRight(b.String(), "\n")
 	},

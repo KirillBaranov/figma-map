@@ -1,0 +1,102 @@
+// Package render drives headless Chrome to render the agent's output and read
+// the real, computed values from the DOM. These exact "is" values are the
+// deterministic counterpart to the Figma "should-be" tokens, so reconcile
+// compares numbers instead of guessing from pixels.
+package render
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/chromedp/chromedp"
+)
+
+// Box is an element's layout rectangle in CSS pixels.
+type Box struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+// DOMElement is one rendered element keyed to its Figma node via the
+// data-figma-node attribute the agent stamps onto its generated code.
+type DOMElement struct {
+	FigmaNode string            `json:"figmaNode"`
+	Tag       string            `json:"tag"`
+	Styles    map[string]string `json:"styles"`
+	Box       Box               `json:"box"`
+}
+
+// extractJS collects every [data-figma-node] element's computed styles and box.
+const extractJS = `(() => {
+  const props = ['background-color','color','font-size','font-weight','font-family',
+    'line-height','border-top-left-radius','padding-top','padding-right',
+    'padding-bottom','padding-left','gap','column-gap','row-gap','opacity'];
+  const out = [];
+  document.querySelectorAll('[data-figma-node]').forEach(el => {
+    const cs = getComputedStyle(el);
+    const styles = {};
+    props.forEach(p => { styles[p] = cs.getPropertyValue(p); });
+    const r = el.getBoundingClientRect();
+    out.push({
+      figmaNode: el.getAttribute('data-figma-node'),
+      tag: el.tagName.toLowerCase(),
+      styles: styles,
+      box: { x: r.x, y: r.y, width: r.width, height: r.height }
+    });
+  });
+  return out;
+})()`
+
+// Extract renders url at the given viewport width (so px line up with the Figma
+// frame) and returns the computed styles of every data-figma-node element.
+func Extract(ctx context.Context, url string, width int) ([]DOMElement, error) {
+	if width <= 0 {
+		width = 1280
+	}
+
+	actx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+	tctx, cancelT := context.WithTimeout(actx, 30*time.Second)
+	defer cancelT()
+
+	var els []DOMElement
+	err := chromedp.Run(tctx,
+		chromedp.EmulateViewport(int64(width), 900),
+		chromedp.Navigate(url),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(extractJS, &els),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("DOM extract from %s: %w", url, err)
+	}
+	return els, nil
+}
+
+// Screenshot renders url at the given width and returns a full-page PNG. Used
+// for the Tier-2 semantic check and the no-DOM (image) path.
+func Screenshot(ctx context.Context, url string, width int) ([]byte, error) {
+	if width <= 0 {
+		width = 1280
+	}
+	actx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+	tctx, cancelT := context.WithTimeout(actx, 30*time.Second)
+	defer cancelT()
+
+	var buf []byte
+	err := chromedp.Run(tctx,
+		chromedp.EmulateViewport(int64(width), 900),
+		chromedp.Navigate(url),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.CaptureScreenshot(&buf),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("screenshot %s: %w", url, err)
+	}
+	return buf, nil
+}
