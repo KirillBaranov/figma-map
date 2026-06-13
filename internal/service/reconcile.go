@@ -59,13 +59,16 @@ type Coverage struct {
 // human — deterministic per-element field diffs (Tier 1), honest unmeasured
 // nodes, coverage, and optional semantic findings (Tier 2).
 type Diff struct {
-	Match      bool              `json:"match"`
-	Remaining  int               `json:"remaining"` // fixable (non-advisory) diffs
-	Advisory   int               `json:"advisory"`  // content-driven diffs (don't block match)
-	Coverage   Coverage          `json:"coverage"`
-	ByElement  []ElementDiff     `json:"byElement,omitempty"`
-	Unmeasured []UnmeasuredNode  `json:"unmeasured,omitempty"`
-	Semantic   []SemanticFinding `json:"semantic,omitempty"`
+	Match     bool          `json:"match"`
+	Remaining int           `json:"remaining"` // fixable (non-advisory) diffs
+	Advisory  int           `json:"advisory"`  // content-driven diffs (don't block match)
+	Coverage  Coverage      `json:"coverage"`
+	ByElement []ElementDiff `json:"byElement,omitempty"`
+	// SpatiallyAligned lists node ids matched to a DOM element by geometry rather
+	// than a data-figma-node tag — lower confidence, so the report flags them.
+	SpatiallyAligned []string          `json:"spatiallyAligned,omitempty"`
+	Unmeasured       []UnmeasuredNode  `json:"unmeasured,omitempty"`
+	Semantic         []SemanticFinding `json:"semantic,omitempty"`
 }
 
 // tolerances for deterministic comparison (sub-pixel/font metrics make exact
@@ -80,7 +83,8 @@ type figmaTarget struct {
 	tokens *Tokens
 	typ    string
 	name   string
-	bounds figma.Bounds
+	text   string
+	box    figma.Bounds // absolute within the frame (origin 0,0)
 }
 
 // Reconcile compares a Figma node against the agent's rendered output. story or
@@ -115,13 +119,13 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 	if err != nil {
 		return Diff{}, err
 	}
-	got := make(map[string]render.DOMElement, len(els))
-	for _, e := range els {
-		got[e.FigmaNode] = e
-	}
 
 	want := map[string]figmaTarget{}
-	collectTargets(frame, want)
+	collectTargets(frame, 0, 0, true, want)
+
+	// Align design nodes to DOM elements: exact by data-figma-node where present,
+	// otherwise by geometry/type/text (for existing, untagged implementations).
+	got, spatial := alignElements(want, els)
 
 	byElement, unmeasured := tier1Diff(want, got)
 	remaining, advisory := 0, 0
@@ -136,12 +140,13 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 	}
 
 	diff := Diff{
-		Match:      remaining == 0,
-		Remaining:  remaining,
-		Advisory:   advisory,
-		Coverage:   Coverage{Measured: len(want) - len(unmeasured), Targets: len(want)},
-		ByElement:  byElement,
-		Unmeasured: unmeasured,
+		Match:            remaining == 0,
+		Remaining:        remaining,
+		Advisory:         advisory,
+		Coverage:         Coverage{Measured: len(want) - len(unmeasured), Targets: len(want)},
+		ByElement:        byElement,
+		Unmeasured:       unmeasured,
+		SpatiallyAligned: spatial,
 	}
 
 	if semantic {
@@ -156,13 +161,22 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 	return diff, nil
 }
 
-// collectTargets walks the frame and records every node that carries tokens.
-func collectTargets(n *figma.Node, out map[string]figmaTarget) {
+// collectTargets walks the frame and records every node that carries tokens,
+// accumulating each node's absolute position within the frame (the bridge
+// reports parent-relative bounds). originX/Y is the parent's absolute origin.
+func collectTargets(n *figma.Node, originX, originY float64, root bool, out map[string]figmaTarget) {
+	absX, absY := originX+n.Bounds.X, originY+n.Bounds.Y
+	if root {
+		absX, absY = 0, 0 // frame is the coordinate origin
+	}
 	if t := tokensFromStyle(n.Styles); t != nil {
-		out[n.ID] = figmaTarget{tokens: t, typ: n.Type, name: n.Name, bounds: n.Bounds}
+		out[n.ID] = figmaTarget{
+			tokens: t, typ: n.Type, name: n.Name, text: n.Characters,
+			box: figma.Bounds{X: absX, Y: absY, Width: n.Bounds.Width, Height: n.Bounds.Height},
+		}
 	}
 	for i := range n.Children {
-		collectTargets(&n.Children[i], out)
+		collectTargets(&n.Children[i], absX, absY, false, out)
 	}
 }
 
@@ -284,13 +298,13 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 	}
 	// Box size (containers only; text auto-sizes and would be noisy). Compares
 	// the Figma node's bounds against the rendered element's box.
-	if ft.bounds.Width > 0 {
-		if is, should, bad := cmpDim(el.Box.Width, ft.bounds.Width, tolBox); bad {
+	if ft.box.Width > 0 {
+		if is, should, bad := cmpDim(el.Box.Width, ft.box.Width, tolBox); bad {
 			addAdv("width", is, should)
 		}
 	}
-	if ft.bounds.Height > 0 {
-		if is, should, bad := cmpDim(el.Box.Height, ft.bounds.Height, tolBox); bad {
+	if ft.box.Height > 0 {
+		if is, should, bad := cmpDim(el.Box.Height, ft.box.Height, tolBox); bad {
 			addAdv("height", is, should)
 		}
 	}

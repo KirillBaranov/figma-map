@@ -38,6 +38,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   propagate to bridge HTTP calls).
 - Headless Chrome is pooled: one browser is reused across renders (a tab per
   call) instead of launching Chrome on every reconcile.
+- **Spatial alignment**: `reconcile` works against an existing, untagged
+  implementation — design nodes are matched to DOM elements by geometry/type/text
+  when `data-figma-node` is absent (matched-by-position flagged lower-confidence).
 
 ## [0.1.0] - 2026-06-13
 

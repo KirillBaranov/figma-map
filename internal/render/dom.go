@@ -42,34 +42,46 @@ type Box struct {
 	Height float64 `json:"height"`
 }
 
-// DOMElement is one rendered element keyed to its Figma node via the
-// data-figma-node attribute the agent stamps onto its generated code.
+// DOMElement is one rendered element. FigmaNode is the data-figma-node attribute
+// when present (exact alignment); Text and Box support tag-free spatial
+// alignment against an existing implementation.
 type DOMElement struct {
 	FigmaNode string            `json:"figmaNode"`
 	Tag       string            `json:"tag"`
+	Text      string            `json:"text,omitempty"`
 	Styles    map[string]string `json:"styles"`
 	Box       Box               `json:"box"`
 }
 
-// extractJS collects every [data-figma-node] element's computed styles and box.
+// extractJS collects every visible, sized element's computed styles, box, own
+// text, and data-figma-node attribute (when present). Returning all elements —
+// not just tagged ones — lets reconcile align against untagged implementations.
 const extractJS = `(() => {
   const props = ['background-color','color','font-size','font-weight','font-family',
     'line-height','letter-spacing','text-align','border-top-left-radius',
     'border-top-width','border-top-color','padding-top','padding-right',
     'padding-bottom','padding-left','gap','column-gap','row-gap','opacity'];
+  const skip = new Set(['SCRIPT','STYLE','HEAD','META','LINK','TITLE','BR','NOSCRIPT','HTML']);
   const out = [];
-  document.querySelectorAll('[data-figma-node]').forEach(el => {
+  for (const el of document.querySelectorAll('*')) {
+    if (skip.has(el.tagName)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
     const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
     const styles = {};
     props.forEach(p => { styles[p] = cs.getPropertyValue(p); });
-    const r = el.getBoundingClientRect();
+    let text = '';
+    for (const n of el.childNodes) { if (n.nodeType === 3) text += n.textContent; }
     out.push({
-      figmaNode: el.getAttribute('data-figma-node'),
+      figmaNode: el.getAttribute('data-figma-node') || '',
       tag: el.tagName.toLowerCase(),
+      text: text.trim().slice(0, 80),
       styles: styles,
       box: { x: r.x, y: r.y, width: r.width, height: r.height }
     });
-  });
+    if (out.length >= 3000) break;
+  }
   return out;
 })()`
 

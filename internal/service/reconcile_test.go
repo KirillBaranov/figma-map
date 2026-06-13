@@ -120,7 +120,7 @@ func TestClassifyUnmeasured(t *testing.T) {
 
 func TestTier1_ExtendedProperties(t *testing.T) {
 	want := map[string]figmaTarget{
-		"box": {typ: "FRAME", name: "Box", bounds: figma.Bounds{Width: 200, Height: 100}, tokens: &Tokens{
+		"box": {typ: "FRAME", name: "Box", box: figma.Bounds{Width: 200, Height: 100}, tokens: &Tokens{
 			Opacity:      ptr(0.5),
 			Stroke:       "#000000",
 			StrokeWeight: ptr(2.0),

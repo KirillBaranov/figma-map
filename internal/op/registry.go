@@ -390,6 +390,10 @@ func renderReconcile(d service.Diff) string {
 	if decorative > 0 {
 		fmt.Fprintf(&b, "\n%d decorative/image node(s) not DOM-measurable (expected).\n", decorative)
 	}
+	if len(d.SpatiallyAligned) > 0 {
+		fmt.Fprintf(&b, "\n%d node(s) matched by position, not by tag (lower confidence).\n",
+			len(d.SpatiallyAligned))
+	}
 
 	return strings.TrimRight(b.String(), "\n")
 }

@@ -250,8 +250,10 @@ Honest gaps in the current release, not hidden behaviour:
   relative. Adjust in the binding or normalize to your alias.
 - **Static screenshots only** — hover/focus/active states are not observable, so
   variants differing only by interaction state cannot be distinguished.
-- **reconcile measures tagged elements** — only DOM nodes carrying
-  `data-figma-node` are diffed; others are reported `unmeasured`, never assumed
+- **reconcile alignment** — design nodes are matched to DOM elements exactly via
+  `data-figma-node` when present, otherwise by geometry/type/text so it works on
+  an existing, untagged implementation (matched-by-position results are flagged
+  lower-confidence). Unmatched nodes are reported `unmeasured`, never assumed
   correct. The goal is *spec-perfect* (every measured property matches the
   design), not pixel-raster identity, which font rendering makes unattainable.
 - **reconcile property coverage**: color/background, font size/weight,
