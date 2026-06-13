@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/kirillbaranov/figma-map/internal/op"
 	"github.com/kirillbaranov/figma-map/internal/service"
@@ -25,9 +27,12 @@ func newMCPCmd(get func() *service.Service) *cobra.Command {
 			}, nil)
 
 			svc := get()
-			for _, o := range op.All() {
+			ops := op.All()
+			for _, o := range ops {
 				o.AddMCP(srv, svc)
 			}
+			// Logs go to stderr — stdout carries the MCP protocol.
+			fmt.Fprintf(os.Stderr, "figma-map mcp: serving %d tools over stdio\n", len(ops))
 			return srv.Run(context.Background(), &mcp.StdioTransport{})
 		},
 	}

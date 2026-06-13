@@ -20,6 +20,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Headless Chrome so the render/align e2e test runs (it skips otherwise).
+      - uses: browser-actions/setup-chrome@v1
+
       - name: Verify formatting
         run: |
           unformatted=$(gofmt -l .)

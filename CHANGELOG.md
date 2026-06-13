@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-06-13
 
 ### Added
 
@@ -42,6 +42,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   implementation — design nodes are matched to DOM elements by geometry/type/text
   when `data-figma-node` is absent (matched-by-position flagged lower-confidence).
 
+### Hardening
+
+- LLM calls retry on 429/5xx/network with exponential backoff.
+- The shared headless browser is recreated if it dies; renders retry once.
+- reconcile edge cases: letter-spacing `normal` = 0; width/height skipped on
+  CSS-transformed elements; missing drop shadow reported; box-shadow/transform
+  read from the DOM.
+- e2e test exercises the real render → align → diff path against headless Chrome
+  (run in CI; skipped where Chrome is absent).
+
 ## [0.1.0] - 2026-06-13
 
 ### Added
@@ -60,5 +70,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - One-line `install.sh` with OS/arch detection and SHA-256 verification.
 - CI (build, test, vet, lint) and GoReleaser-based release pipeline.
 
-[Unreleased]: https://github.com/KirillBaranov/figma-map/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/KirillBaranov/figma-map/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KirillBaranov/figma-map/releases/tag/v0.1.0
