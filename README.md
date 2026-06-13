@@ -34,14 +34,33 @@ reproducible and CI-friendly.
 - An **OpenAI-compatible** vision endpoint + API key. Works with OpenAI, the
   kb-labs gateway, or a local Ollama/llava server via `llm.baseURL`.
 
+## Install
+
+One line — detects your OS/arch, downloads the matching release, verifies its
+SHA-256 checksum, and installs the binary:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kirillbaranov/figma-map/main/install.sh | sh
+```
+
+Overrides: `FIGMA_MAP_VERSION=v0.1.0` to pin a tag, `FIGMA_MAP_INSTALL_DIR=~/bin`
+to choose the directory.
+
+Or with Go:
+
+```bash
+go install github.com/kirillbaranov/figma-map@latest
+```
+
+Or grab a prebuilt archive from the [releases page](https://github.com/kirillbaranov/figma-map/releases).
+
 ## Setup
 
 ```bash
-go build -o figma-map .
 cp figma-map.example.yaml figma-map.yaml   # edit as needed
 export OPENAI_API_KEY=sk-...
 
-./figma-map doctor                         # verify bridge, chrome, storybook, key
+figma-map doctor                           # verify bridge, chrome, storybook, key
 ```
 
 ## Usage
