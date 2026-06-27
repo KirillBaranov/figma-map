@@ -14,10 +14,10 @@ func ScreenshotHTML(html string, w, h int, scale float64) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp html: %w", err)
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 
 	if _, err := f.WriteString(html); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("write temp html: %w", err)
 	}
 	if err := f.Close(); err != nil {

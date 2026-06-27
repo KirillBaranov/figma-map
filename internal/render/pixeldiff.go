@@ -213,10 +213,3 @@ func max8(a, b, c uint8) uint8 {
 	}
 	return c
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

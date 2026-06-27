@@ -245,6 +245,7 @@ type MaybePaints struct {
 	Mixed  bool
 }
 
+// UnmarshalJSON implements the []Paint|"mixed" union.
 func (m *MaybePaints) UnmarshalJSON(b []byte) error {
 	b = bytes.TrimSpace(b)
 	if string(b) == `"mixed"` {
