@@ -21,9 +21,18 @@ and bridge server this builds on.
 - A `get_selection` round trip wired into figma-map's `selection` op
   (`internal/figma/bridge.go`, `internal/service/selection.go`).
 
-## What this repo's ongoing plan adds on top
+## What this fork adds on top of upstream
 
-See `/Users/kirillbaranov/.claude/plans/snazzy-waddling-hinton.md` in the
-figma-map repo for the full backlog (Phases 0–10): per-node Figma Variable
-binding resolution, native `GRID` auto-layout, prototyping reactions,
-dropped-style-field fixes, and more.
+- Per-node/per-paint Figma Variable binding resolution (`resolveVariableLabel`,
+  `resolveBoundVariables` in `serializer.ts`) plus `codeSyntax`/`scopes`
+  passthrough on `get_variable_defs` — so a node's value can be traced back
+  to the actual bound Variable instead of the agent guessing.
+- Native Figma `GRID` auto-layout support (track sizes/gaps, per-child
+  row/column placement).
+- Prototyping reactions (trigger + transition type/easing/duration).
+- Previously-dropped style fields now serialized: `constraints`,
+  `clipsContent`, `blendMode`, `dashPattern`, `cornerSmoothing`,
+  per-side stroke weights, auto-layout child escape hatches
+  (`layoutPositioning`/`layoutGrow`/`layoutAlign`).
+- `devStatus`, `devResources`, `annotations`, `exportSettings` surfaced on
+  serialized nodes.
