@@ -154,6 +154,12 @@ type screenshotResponse struct {
 		Base64   string  `json:"base64"`
 		Width    float64 `json:"width"`
 		Height   float64 `json:"height"`
+		// Optional crop applied when the node had no background and the plugin
+		// exported a background-providing ancestor instead.
+		CropX *int `json:"cropX,omitempty"`
+		CropY *int `json:"cropY,omitempty"`
+		CropW *int `json:"cropW,omitempty"`
+		CropH *int `json:"cropH,omitempty"`
 	} `json:"exports"`
 }
 
@@ -186,7 +192,44 @@ func (b *Bridge) Screenshot(ctx context.Context, fileKey, id string, opts Screen
 	if len(resp.Exports) == 0 {
 		return nil, fmt.Errorf("no screenshot returned for node %s", id)
 	}
-	return base64.StdEncoding.DecodeString(resp.Exports[0].Base64)
+	e := resp.Exports[0]
+	pngBytes, err := base64.StdEncoding.DecodeString(e.Base64)
+	if err != nil {
+		return nil, err
+	}
+	if e.CropX != nil {
+		pngBytes, err = cropPNG(pngBytes, *e.CropX, *e.CropY, *e.CropW, *e.CropH)
+		if err != nil {
+			return nil, fmt.Errorf("crop screenshot: %w", err)
+		}
+	}
+	return pngBytes, nil
+}
+
+// Metadata implements Source.
+func (b *Bridge) Metadata(ctx context.Context, fileKey string) (Metadata, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_metadata", FileKey: fileKey})
+	if err != nil {
+		return Metadata{}, err
+	}
+	var meta Metadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return Metadata{}, fmt.Errorf("decode metadata: %w", err)
+	}
+	return meta, nil
+}
+
+// VariableDefs implements Source.
+func (b *Bridge) VariableDefs(ctx context.Context, fileKey string) (VariableDefs, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_variable_defs", FileKey: fileKey})
+	if err != nil {
+		return VariableDefs{}, err
+	}
+	var defs VariableDefs
+	if err := json.Unmarshal(data, &defs); err != nil {
+		return VariableDefs{}, fmt.Errorf("decode variable defs: %w", err)
+	}
+	return defs, nil
 }
 
 // decodeSingleNode handles both the object and one-element-array shapes the

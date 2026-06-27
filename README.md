@@ -106,7 +106,7 @@ Or download a prebuilt archive from the
 |---|---|
 | **Google Chrome / Chromium** | headless screenshots of Storybook stories |
 | **Storybook 7+** running | exposes the `index.json` story manifest |
-| **[figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge)** running | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits |
+| **bridge/ plugin+server running** (vendored fork of [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge), see [bridge/NOTICE.md](bridge/NOTICE.md)) | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix bridge/server run build && node bridge/server/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `bridge/plugin/manifest.json`) |
 | **OpenAI-compatible vision endpoint + key** | matching and prop inference (works with OpenAI, a local Ollama/llava server, or any compatible gateway via `llm.baseURL`) |
 
 ## Quick start
@@ -119,36 +119,46 @@ figma-map doctor                              # verify bridge, chrome, storybook
 
 # 1. Build the code-component catalog (no AI).
 #    --project points at the repo containing your *.stories.tsx files.
-figma-map scan --project /path/to/storybook-project
+figma-map setup scan --project /path/to/storybook-project
 
 # 2. Match Figma to the catalog and write the binding (AI, run once).
-figma-map bind
+figma-map setup bind
 #    → review figma-map.binding.yaml
 
 # 3. Generate code for any Figma node.
-figma-map map 13:1077
+figma-map build map 13:1077
 ```
 
 ## Commands
 
-| Command | Description | Uses AI |
-|---|---|:---:|
-| `figma-map doctor` | Check bridge, Chrome, Storybook, and API key | — |
-| `figma-map scan` | Screenshot Storybook stories → `catalog/` | — |
-| `figma-map bind` | Match Figma sections to the catalog + infer prop schemas → `figma-map.binding.yaml` | ✓ once |
-| `figma-map list` | List the components in a binding | — |
-| `figma-map tokens <nodeId>` | Exact design tokens (color/spacing/font/radius) for a node | — |
-| `figma-map inspect <nodeId>` | Node subtree: structure, text, bounds, optional `--tokens` | — |
-| `figma-map screenshot <nodeId>` | Render a node to PNG (`--out` to save) | — |
-| `figma-map export-assets <nodeId>` | Export a node to SVG/PNG/JPG | — |
-| `figma-map map <nodeId>` | Identify a node's component + props → JSX | ✓ cheap |
-| `figma-map plan <frameId>` | Map every instance in a frame → buildable spec | ✓ cheap |
-| `figma-map reconcile <nodeId>` | Diff rendered output vs the design (deterministic) | — / opt-in |
-| `figma-map mcp` | Run as an MCP server over stdio (for agents) | — |
+Commands are grouped by what they do — `figma-map <group> <verb>` on the CLI,
+a flat `group_verb` MCP tool name (e.g. `figma_find`) for agents.
+
+| Group | Command | Description | Uses AI |
+|---|---|---|:---:|
+| — | `figma-map doctor` | Check bridge, Chrome, Storybook, and API key | — |
+| **figma** (read Figma ground truth) | `figma find <query>` | Search nodes by name/text/type | — |
+| | `figma inspect <nodeId>` | Node subtree: structure, text, bounds, optional `--tokens` | — |
+| | `figma selection` | Get the node(s) currently selected in the editor | — |
+| | `figma pages` | List the file's pages — discovery entry point | — |
+| | `figma tokens <nodeId>` | Exact design tokens (color/spacing/font/radius) for a node | — |
+| | `figma variables` | The file's full Variable catalog (not per-node bindings) | — |
+| **capture** (images) | `capture screenshot <nodeId>` | Render a node to PNG | — |
+| | `capture render <nodeId>` | Screenshot figma-map's own raw codegen output | — |
+| | `capture export <nodeId>` | Export a node to SVG/PNG/JPG | — |
+| **build** (code) | `build codegen <nodeId>` | Full TSX for a frame (layout, text, UIKit components) | — |
+| | `build map <nodeId>` | Identify a node's component + props → JSX | ✓ cheap |
+| | `build plan <nodeId>` | Map every instance in a frame → buildable spec | ✓ cheap |
+| **verify** (compare) | `verify pixeldiff <nodeId>` | Pixel-level screenshot comparison + per-region breakdown | — |
+| | `verify reconcile <nodeId>` | Diff rendered output vs the design (deterministic) | — / opt-in |
+| **setup** (bootstrap) | `setup scan` | Screenshot Storybook stories → `catalog/` | — |
+| | `setup bind` | Match Figma sections to the catalog + infer prop schemas | ✓ once |
+| | `setup components` | List the components in a binding | — |
+| — | `figma-map mcp` | Run as an MCP server over stdio (for agents) | — |
 
 Pass `--file <fileKey>` to any command when multiple Figma files are connected,
-and `--json` for machine-readable output. Run `figma-map <command> --help` for
-full flags.
+and `--json` for machine-readable output. Run `figma-map <group> <command> --help`
+for full flags.
 
 ## Agent / MCP integration
 
@@ -168,14 +178,15 @@ Configure your agent (Claude Code, Cursor, …):
 The agent owns the loop; figma-map is a deterministic tool — it measures, it
 doesn't guess (see [ADR-0001](docs/adr/ADR-0001-dumb-tool.md)).
 
-1. **`plan <frameId>`** → a buildable spec: layout, each component instance mapped
-   to your code (import + props), exact tokens, and an honest list of what
-   couldn't be mapped.
+1. **`build plan <nodeId>`** → a buildable spec: layout, each component instance
+   mapped to your code (import + props), exact tokens, and an honest list of
+   what couldn't be mapped.
 2. The agent **writes the code**, stamping each element with
    `data-figma-node="<id>"` so it can be measured later. Unmapped pieces are
-   hand-built from `tokens`; assets come from `export-assets` (not regenerated).
+   hand-built from `figma tokens`; assets come from `capture export` (not
+   regenerated).
 3. The agent **renders** it (a Storybook story or a dev-server URL).
-4. **`reconcile <frameId> --story <id>`** (or `--url`) → figma-map renders the
+4. **`verify reconcile <nodeId> --story <id>`** (or `--url`) → figma-map renders the
    implementation, reads its DOM computed styles, and diffs them against the
    design's exact tokens, returning **per-element is/should numbers**:
 

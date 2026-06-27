@@ -35,7 +35,13 @@ func (s *Service) Doctor(ctx context.Context) Report {
 		r.Checks = append(r.Checks, c)
 	}
 
-	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), s.src.Ping(ctx))
+	// The bridge process being up and a Figma plugin actually being connected
+	// to it are two different failure modes that look identical to an agent
+	// if only Ping is checked — split them into separate checks so "bridge
+	// down" and "bridge up but no plugin connected" are distinguishable.
+	bridgeErr := s.src.Ping(ctx)
+	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), bridgeErr)
+	add("figma plugin connected", pluginConnected(ctx, s, bridgeErr))
 	add("headless chrome", findChrome())
 	add(fmt.Sprintf("storybook (%s)", s.cfg.Storybook), pingStorybook(s.cfg.Storybook))
 
@@ -45,6 +51,25 @@ func (s *Service) Doctor(ctx context.Context) Report {
 		add(fmt.Sprintf("API key — set $%s", s.cfg.LLM.APIKeyEnv), fmt.Errorf("not set"))
 	}
 	return r
+}
+
+// pluginConnected reports whether a Figma plugin is actually connected to
+// the (already-reachable) bridge — the bridge process can be up with zero
+// files connected, which otherwise looks identical to "bridge down" to an
+// agent reading just the Ping check.
+func pluginConnected(ctx context.Context, s *Service, bridgeErr error) error {
+	if bridgeErr != nil {
+		return fmt.Errorf("bridge unreachable — restart it: cd bridge/server && node dist/index.js")
+	}
+	files, err := s.src.Files(ctx)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("bridge is up but no Figma file is connected — open the file " +
+			"and run the plugin in Figma (Plugins → Development)")
+	}
+	return nil
 }
 
 // findChrome locates a Chrome/Chromium binary the way chromedp does.

@@ -18,6 +18,13 @@ type InspectNode struct {
 	Text     string       `json:"text,omitempty"`
 	Bounds   figma.Bounds `json:"bounds"`
 	Tokens   *Tokens      `json:"tokens,omitempty"`
+	// Reactions are this node's prototyping reactions — opt-in detail, only
+	// populated alongside Tokens (withTokens=true).
+	Reactions []figma.Reaction `json:"reactions,omitempty"`
+	// DevResources/Annotations are designer-attached links and notes — also
+	// opt-in, never auto-applied, but a strong human-given hint to read.
+	DevResources []figma.DevResource `json:"devResources,omitempty"`
+	Annotations  []string            `json:"annotations,omitempty"`
 }
 
 // InspectResult is the `inspect` output: a flat, pre-order list of nodes.
@@ -48,6 +55,9 @@ func flatten(res *InspectResult, n *figma.Node, parentID string, cur int, withTo
 	}
 	if withTokens {
 		item.Tokens = tokensFromStyle(n.Styles)
+		item.Reactions = n.Reactions
+		item.DevResources = n.DevResources
+		item.Annotations = n.Annotations
 	}
 	res.Nodes = append(res.Nodes, item)
 

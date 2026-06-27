@@ -37,14 +37,14 @@ func e2eFrame(textWeight float64) *figma.Node {
 	return &figma.Node{
 		ID: "1", Type: "FRAME", Bounds: figma.Bounds{Width: 200, Height: 100},
 		Styles: &figma.Style{
-			Fills:   []figma.Paint{{Type: "SOLID", Color: "#ffffff"}},
+			Fills:   figma.MaybePaints{Paints: []figma.Paint{{Type: "SOLID", Color: "#ffffff"}}},
 			Padding: &figma.Padding{Top: 16, Right: 16, Bottom: 16, Left: 16},
 		},
 		Children: []figma.Node{{
 			ID: "2", Type: "TEXT", Characters: "Hi",
 			Bounds: figma.Bounds{X: 16, Y: 16, Width: 168, Height: 28},
 			Styles: &figma.Style{
-				Fills:      []figma.Paint{{Type: "SOLID", Color: "#18181b"}},
+				Fills:      figma.MaybePaints{Paints: []figma.Paint{{Type: "SOLID", Color: "#18181b"}}},
 				FontSize:   figma.MaybeNum{Value: 24, Set: true},
 				FontWeight: figma.MaybeNum{Value: textWeight, Set: true},
 			},

@@ -176,3 +176,33 @@ func Screenshot(ctx context.Context, url string, width int) ([]byte, error) {
 	}
 	return buf, nil
 }
+
+// screenshotViewport renders url in a viewport of exactly w×h CSS pixels at
+// the given deviceScaleFactor (1 = @1x, 2 = @2x). The returned PNG has
+// physical dimensions w*scale × h*scale. Use scale=1 and match against a
+// scale=1 Figma export so both images are the same resolution before diffing.
+func screenshotViewport(url string, w, h int, scale float64) ([]byte, error) {
+	if w <= 0 {
+		w = 1280
+	}
+	if h <= 0 {
+		h = 900
+	}
+	if scale <= 0 {
+		scale = 1
+	}
+	var buf []byte
+	err := withTab(ensureBrowser(), 30*time.Second, func(tctx context.Context) error {
+		return chromedp.Run(tctx,
+			chromedp.EmulateViewport(int64(w), int64(h), chromedp.EmulateScale(scale)),
+			chromedp.Navigate(url),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+			chromedp.Sleep(600*time.Millisecond),
+			chromedp.CaptureScreenshot(&buf),
+		)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("screenshot %s: %w", url, err)
+	}
+	return buf, nil
+}

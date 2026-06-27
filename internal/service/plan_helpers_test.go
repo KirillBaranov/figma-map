@@ -53,7 +53,7 @@ func TestLayoutOf(t *testing.T) {
 
 func TestCollectTargets(t *testing.T) {
 	frame := &figma.Node{ID: "f", Type: "FRAME",
-		Styles: &figma.Style{Fills: []figma.Paint{{Type: "SOLID", Color: "#fff"}}},
+		Styles: &figma.Style{Fills: figma.MaybePaints{Paints: []figma.Paint{{Type: "SOLID", Color: "#fff"}}}},
 		Children: []figma.Node{
 			{ID: "t", Type: "TEXT", Styles: &figma.Style{FontSize: figma.MaybeNum{Value: 16, Set: true}}},
 			{ID: "plain", Type: "FRAME"}, // no styles → not a target

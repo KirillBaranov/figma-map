@@ -21,9 +21,12 @@ type ScreenshotResult struct {
 	PNG    []byte `json:"-"`
 }
 
-// Screenshot renders a node to PNG. If outPath is set the bytes are written
-// there. Deterministic (no API key).
-func (s *Service) Screenshot(ctx context.Context, fileKey, nodeID string, scale float64, outPath string) (ScreenshotResult, error) {
+// Screenshot renders a node to PNG and writes it to outPath (or, if empty, a
+// default path under .figma-map/out/ — see defaultOutPath) so the caller
+// always gets a path back instead of inline bytes. Pass inline=true to also
+// populate ScreenshotResult.PNG for the rare case the caller genuinely wants
+// the bytes in the response. Deterministic (no API key).
+func (s *Service) Screenshot(ctx context.Context, fileKey, nodeID string, scale float64, outPath string, inline bool) (ScreenshotResult, error) {
 	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return ScreenshotResult{}, err
@@ -36,18 +39,22 @@ func (s *Service) Screenshot(ctx context.Context, fileKey, nodeID string, scale 
 		return ScreenshotResult{}, err
 	}
 
-	res := ScreenshotResult{NodeID: nodeID, PNG: png}
+	res := ScreenshotResult{NodeID: nodeID}
+	if inline {
+		res.PNG = png
+	}
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(png)); err == nil {
 		res.Width, res.Height = cfg.Width, cfg.Height
 	}
-	if outPath != "" {
-		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-			return res, err
-		}
-		if err := os.WriteFile(outPath, png, 0o644); err != nil {
-			return res, err
-		}
-		res.Path = outPath
+	if outPath == "" {
+		outPath = defaultOutPath(nodeID, "screenshot", ".png")
 	}
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return res, err
+	}
+	if err := os.WriteFile(outPath, png, 0o644); err != nil {
+		return res, err
+	}
+	res.Path = outPath
 	return res, nil
 }

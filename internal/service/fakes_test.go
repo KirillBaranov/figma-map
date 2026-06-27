@@ -19,10 +19,12 @@ import (
 
 // fakeSource is an in-memory figma.Source for offline orchestration tests.
 type fakeSource struct {
-	files []figma.File
-	doc   *figma.Node
-	nodes map[string]*figma.Node
-	png   []byte
+	files        []figma.File
+	doc          *figma.Node
+	nodes        map[string]*figma.Node
+	png          []byte
+	metadata     figma.Metadata
+	variableDefs figma.VariableDefs
 }
 
 func (f *fakeSource) Ping(context.Context) error                  { return nil }
@@ -42,6 +44,12 @@ func (f *fakeSource) Node(_ context.Context, _ string, id string) (*figma.Node, 
 func (f *fakeSource) Selection(context.Context, string) ([]figma.Node, error) { return nil, nil }
 func (f *fakeSource) Screenshot(context.Context, string, string, figma.ScreenshotOpts) ([]byte, error) {
 	return f.png, nil
+}
+func (f *fakeSource) Metadata(context.Context, string) (figma.Metadata, error) {
+	return f.metadata, nil
+}
+func (f *fakeSource) VariableDefs(context.Context, string) (figma.VariableDefs, error) {
+	return f.variableDefs, nil
 }
 
 // mockModel is a llm.VisionModel that replays canned JSON keyed by schema name.

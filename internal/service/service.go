@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/kirillbaranov/figma-map/internal/config"
 	"github.com/kirillbaranov/figma-map/internal/figma"
@@ -101,4 +102,12 @@ func (s *Service) resolveFileKey(ctx context.Context, flag string) (string, erro
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// defaultOutPath returns the default file path for a binary result that
+// wasn't given an explicit --out: ".figma-map/out/<nodeId>-<kind><ext>". Used
+// so an agent gets a path back by default instead of inline bytes, unless it
+// explicitly asks for --inline.
+func defaultOutPath(nodeID, kind, ext string) string {
+	return filepath.Join(".figma-map", "out", safeFileName(nodeID)+"-"+kind+ext)
 }

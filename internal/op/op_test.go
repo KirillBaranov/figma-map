@@ -17,15 +17,11 @@ func TestConvergence(t *testing.T) {
 		t.Fatal("no operations registered")
 	}
 
-	// --- CLI side: build commands, index by name ---
+	// --- CLI side: build commands, find each op by its (possibly nested) path ---
 	root := &cobra.Command{Use: "figma-map"}
 	get := func() *service.Service { return nil } // not invoked in this test
 	for _, o := range ops {
 		o.AddCLI(root, get)
-	}
-	cliShort := map[string]string{}
-	for _, c := range root.Commands() {
-		cliShort[c.Name()] = c.Short
 	}
 
 	// --- MCP side: register tools, list them over an in-memory transport ---
@@ -61,12 +57,13 @@ func TestConvergence(t *testing.T) {
 	// --- assert every op converges across both surfaces ---
 	for _, o := range ops {
 		name, summary := o.Meta()
+		path := o.CLIPath()
 
-		short, ok := cliShort[name]
-		if !ok {
-			t.Errorf("op %q has no CLI command", name)
-		} else if short != summary {
-			t.Errorf("op %q CLI Short %q != summary %q", name, short, summary)
+		cmd, _, err := root.Find(path)
+		if err != nil || cmd.Name() != path[len(path)-1] {
+			t.Errorf("op %q has no CLI command at path %v", name, path)
+		} else if cmd.Short != summary {
+			t.Errorf("op %q CLI Short %q != summary %q", name, cmd.Short, summary)
 		}
 
 		desc, ok := mcpDesc[name]

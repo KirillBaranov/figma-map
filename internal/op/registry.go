@@ -28,12 +28,19 @@ func All() []Registrar {
 		bindOp,
 		listOp,
 		tokensOp,
+		variablesOp,
 		inspectOp,
+		selectionOp,
+		pagesOp,
 		screenshotOp,
+		renderOp,
 		exportAssetsOp,
 		mapOp,
 		planOp,
+		findOp,
+		codegenOp,
 		reconcileOp,
+		pixelDiffOp,
 	}
 }
 
@@ -42,7 +49,8 @@ func All() []Registrar {
 type doctorIn struct{}
 
 var doctorOp = Op[doctorIn, service.Report]{
-	Name:    "doctor",
+	Group:   "",
+	Verb:    "doctor",
 	Summary: "Check that the bridge, Chrome, Storybook, and API key are available",
 	Run: func(ctx context.Context, s *service.Service, _ doctorIn) (service.Report, error) {
 		return s.Doctor(ctx), nil
@@ -81,7 +89,8 @@ type scanIn struct {
 }
 
 var scanOp = Op[scanIn, service.ScanResult]{
-	Name:    "scan",
+	Group:   "setup",
+	Verb:    "scan",
 	Summary: "Screenshot Storybook stories into a code-component catalog",
 	Run: func(ctx context.Context, s *service.Service, in scanIn) (service.ScanResult, error) {
 		return s.Scan(ctx, in.Storybook, in.Project, in.Out)
@@ -100,7 +109,8 @@ type bindIn struct {
 }
 
 var bindOp = Op[bindIn, service.BindResult]{
-	Name:    "bind",
+	Group:   "setup",
+	Verb:    "bind",
 	Summary: "Match Figma component sections to the catalog and write a binding",
 	Long: "bind screenshots each top-level Figma component section, matches it " +
 		"against the catalog with a vision LLM, infers each matched component's " +
@@ -121,7 +131,8 @@ type listIn struct {
 }
 
 var listOp = Op[listIn, service.ListResult]{
-	Name:    "list",
+	Group:   "setup",
+	Verb:    "components",
 	Summary: "List the components in a binding",
 	Run: func(_ context.Context, s *service.Service, in listIn) (service.ListResult, error) {
 		return s.List(in.Binding)
@@ -153,7 +164,8 @@ type mapIn struct {
 }
 
 var mapOp = Op[mapIn, service.MapResult]{
-	Name:    "map",
+	Group:   "build",
+	Verb:    "map",
 	Summary: "Generate code for a Figma node using a binding",
 	Run: func(ctx context.Context, s *service.Service, in mapIn) (service.MapResult, error) {
 		return s.Map(ctx, in.File, in.Binding, in.Catalog, in.NodeID)
@@ -171,7 +183,8 @@ type tokensIn struct {
 }
 
 var tokensOp = Op[tokensIn, service.TokensResult]{
-	Name:    "tokens",
+	Group:   "figma",
+	Verb:    "tokens",
 	Summary: "Extract exact design tokens (color, spacing, font, radius) for a node",
 	Run: func(ctx context.Context, s *service.Service, in tokensIn) (service.TokensResult, error) {
 		return s.GetTokens(ctx, in.File, in.NodeID)
@@ -181,6 +194,68 @@ var tokensOp = Op[tokensIn, service.TokensResult]{
 			return fmt.Sprintf("%s (%s): no tokens", r.Name, r.Type)
 		}
 		return fmt.Sprintf("%s (%s):\n%s", r.Name, r.Type, indentJSON(r.Tokens))
+	},
+}
+
+// ---- variables ----
+
+type variablesIn struct {
+	File string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+}
+
+var variablesOp = Op[variablesIn, service.VariablesResult]{
+	Group:   "figma",
+	Verb:    "variables",
+	Summary: "List every Figma Variable defined in the file (the token catalog, not per-node bindings)",
+	Long: "variables returns the file's full local-variable catalog — every collection, " +
+		"every variable, every mode's value — independent of any specific node. " +
+		"Use it to see what tokens exist in the file; use `tokens` on a specific node " +
+		"to see which of these (if any) that node is actually bound to.",
+	Run: func(ctx context.Context, s *service.Service, in variablesIn) (service.VariablesResult, error) {
+		return s.Variables(ctx, in.File)
+	},
+	Render: func(r service.VariablesResult) string {
+		if len(r.Collections) == 0 {
+			return "no variable collections in this file"
+		}
+		var b strings.Builder
+		for _, c := range r.Collections {
+			fmt.Fprintf(&b, "%s (%d mode(s)):\n", c.Name, len(c.Modes))
+			for _, v := range c.Variables {
+				fmt.Fprintf(&b, "  %-30s %s\n", v.Name, v.ResolvedType)
+			}
+		}
+		return strings.TrimRight(b.String(), "\n")
+	},
+}
+
+// ---- pages ----
+
+type pagesIn struct {
+	File string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+}
+
+var pagesOp = Op[pagesIn, service.PagesResult]{
+	Group:   "figma",
+	Verb:    "pages",
+	Summary: "List the file's pages — the discovery entry point when you don't have a node id yet",
+	Long: "pages returns the file name and page list only — no tree, no styles. " +
+		"Use it first to get oriented in a file, then `find`/`inspect` to drill into a " +
+		"specific page or frame.",
+	Run: func(ctx context.Context, s *service.Service, in pagesIn) (service.PagesResult, error) {
+		return s.Pages(ctx, in.File)
+	},
+	Render: func(r service.PagesResult) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s\n", r.FileName)
+		for _, p := range r.Pages {
+			mark := "  "
+			if p.ID == r.CurrentPageID {
+				mark = "→ "
+			}
+			fmt.Fprintf(&b, "%s%-20s  %s\n", mark, p.ID, p.Name)
+		}
+		return strings.TrimRight(b.String(), "\n")
 	},
 }
 
@@ -194,7 +269,8 @@ type inspectIn struct {
 }
 
 var inspectOp = Op[inspectIn, service.InspectResult]{
-	Name:    "inspect",
+	Group:   "figma",
+	Verb:    "inspect",
 	Summary: "Inspect a Figma node subtree (structure, text, bounds, optional tokens)",
 	Run: func(ctx context.Context, s *service.Service, in inspectIn) (service.InspectResult, error) {
 		return s.Inspect(ctx, in.File, in.NodeID, in.Tokens, in.Depth)
@@ -213,26 +289,87 @@ var inspectOp = Op[inspectIn, service.InspectResult]{
 	},
 }
 
+// ---- selection ----
+
+type selectionIn struct {
+	File string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+}
+
+var selectionOp = Op[selectionIn, service.SelectionResult]{
+	Group:   "figma",
+	Verb:    "selection",
+	Summary: "Get the node(s) currently selected in the Figma editor",
+	Long: "selection asks the running Figma plugin which node(s) the user has selected right now. " +
+		"Use it to act on \"the selected layer\" without the user having to copy a node id — " +
+		"pipe the returned id into tokens, inspect, screenshot, codegen, or pixeldiff.",
+	Run: func(ctx context.Context, s *service.Service, in selectionIn) (service.SelectionResult, error) {
+		return s.Selection(ctx, in.File)
+	},
+	Render: func(r service.SelectionResult) string {
+		if len(r.Nodes) == 0 {
+			return "no selection — select a layer in Figma and try again"
+		}
+		var b strings.Builder
+		for _, n := range r.Nodes {
+			fmt.Fprintf(&b, "%-20s  %-18s  %s\n", n.ID, n.Type, n.Name)
+		}
+		return strings.TrimRight(b.String(), "\n")
+	},
+}
+
+// ---- render ----
+
+type renderIn struct {
+	NodeID string  `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
+	File   string  `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Out    string  `json:"out" jsonschema:"output PNG path; default: .figma-map/out/<nodeId>-render.png"`
+	Scale  float64 `json:"scale" jsonschema:"export scale factor" default:"1"`
+	Inline bool    `json:"inline" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
+}
+
+var renderOp = Op[renderIn, service.RenderResult]{
+	Group:   "capture",
+	Verb:    "render",
+	Summary: "Screenshot figma-map's own raw codegen output for a node — no app or server needed",
+	Long: "render generates standalone HTML directly from the node's Figma tree (the same CSS " +
+		"codegen uses, but plain style=\"\" attributes and no UIKit component substitution, " +
+		"since there's no app to mount one in) and screenshots it headless via a file:// URL. " +
+		"Use it to sanity-check the converter's CSS before writing any real implementation, or " +
+		"pass no --url to `pixeldiff` to diff against this directly. Always writes a PNG to " +
+		"--out (or a default .figma-map/out/ path) — pass --inline to also get the bytes back.",
+	Run: func(ctx context.Context, s *service.Service, in renderIn) (service.RenderResult, error) {
+		return s.Render(ctx, in.File, in.NodeID, in.Scale, in.Out, in.Inline)
+	},
+	Render: func(r service.RenderResult) string {
+		return fmt.Sprintf("wrote %s (%d×%d)", r.Path, r.Width, r.Height)
+	},
+	Image: func(r service.RenderResult) ([]byte, string) {
+		return r.PNG, "image/png"
+	},
+}
+
 // ---- screenshot ----
 
 type screenshotIn struct {
 	NodeID string  `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
 	File   string  `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Out    string  `json:"out" jsonschema:"output PNG path (CLI); omit for raw image (MCP)"`
+	Out    string  `json:"out" jsonschema:"output PNG path; default: .figma-map/out/<nodeId>-screenshot.png"`
 	Scale  float64 `json:"scale" jsonschema:"export scale factor" default:"2"`
+	Inline bool    `json:"inline" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
 }
 
 var screenshotOp = Op[screenshotIn, service.ScreenshotResult]{
-	Name:    "screenshot",
+	Group:   "capture",
+	Verb:    "screenshot",
 	Summary: "Render a Figma node to a PNG image",
+	Long: "Always writes a PNG to --out (or a default .figma-map/out/ path) and returns the " +
+		"path — pass --inline to also get the bytes back (MCP), for the rare case a vision " +
+		"model needs to see the image directly in the response.",
 	Run: func(ctx context.Context, s *service.Service, in screenshotIn) (service.ScreenshotResult, error) {
-		return s.Screenshot(ctx, in.File, in.NodeID, in.Scale, in.Out)
+		return s.Screenshot(ctx, in.File, in.NodeID, in.Scale, in.Out, in.Inline)
 	},
 	Render: func(r service.ScreenshotResult) string {
-		if r.Path != "" {
-			return fmt.Sprintf("wrote %s (%d×%d)", r.Path, r.Width, r.Height)
-		}
-		return fmt.Sprintf("%d×%d PNG — pass --out to save, or use MCP for the image", r.Width, r.Height)
+		return fmt.Sprintf("wrote %s (%d×%d)", r.Path, r.Width, r.Height)
 	},
 	Image: func(r service.ScreenshotResult) ([]byte, string) {
 		return r.PNG, "image/png"
@@ -249,7 +386,8 @@ type exportIn struct {
 }
 
 var exportAssetsOp = Op[exportIn, service.ExportResult]{
-	Name:    "export-assets",
+	Group:   "capture",
+	Verb:    "export",
 	Summary: "Export a Figma node to a file (SVG/PNG/JPG) for use as a production asset",
 	Run: func(ctx context.Context, s *service.Service, in exportIn) (service.ExportResult, error) {
 		return s.ExportAssets(ctx, in.File, in.NodeID, in.Format, in.Out)
@@ -262,7 +400,7 @@ var exportAssetsOp = Op[exportIn, service.ExportResult]{
 // ---- plan ----
 
 type planIn struct {
-	FrameID string `json:"frameId" jsonschema:"Figma frame node id to map" cli:"arg"`
+	NodeID  string `json:"nodeId" jsonschema:"Figma frame node id to map" cli:"arg"`
 	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
 	Depth   int    `json:"depth" jsonschema:"max nesting depth to search (0 = unlimited)" default:"0"`
 	Binding string `json:"binding" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
@@ -270,10 +408,11 @@ type planIn struct {
 }
 
 var planOp = Op[planIn, service.Plan]{
-	Name:    "plan",
+	Group:   "build",
+	Verb:    "plan",
 	Summary: "Map every component instance in a Figma frame to code (buildable spec)",
 	Run: func(ctx context.Context, s *service.Service, in planIn) (service.Plan, error) {
-		return s.Plan(ctx, in.File, in.FrameID, in.Depth, in.Binding, in.Catalog)
+		return s.Plan(ctx, in.File, in.NodeID, in.Depth, in.Binding, in.Catalog)
 	},
 	Render: func(p service.Plan) string {
 		var b strings.Builder
@@ -295,6 +434,31 @@ var planOp = Op[planIn, service.Plan]{
 	},
 }
 
+// ---- codegen ----
+
+type codegenIn struct {
+	NodeID  string `json:"nodeId" jsonschema:"Figma node id of the frame to generate code for" cli:"arg"`
+	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Binding string `json:"binding" jsonschema:"binding file for UIKit component mapping" default:"figma-map.binding.yaml"`
+}
+
+var codegenOp = Op[codegenIn, service.CodegenResult]{
+	Group:   "build",
+	Verb:    "codegen",
+	Summary: "Generate a TSX component from a Figma frame (full tree — layout, text, UIKit components)",
+	Long: "codegen walks the entire Figma node tree and emits a ready-to-edit .tsx file. " +
+		"Every FRAME becomes a <div> with flex/grid styles from auto-layout, " +
+		"every TEXT node becomes a <span>/<p> with typography styles, " +
+		"and every INSTANCE matched in the binding becomes its UIKit component. " +
+		"Pass a section-level frame (not the whole page) for best results.",
+	Run: func(ctx context.Context, s *service.Service, in codegenIn) (service.CodegenResult, error) {
+		return s.Codegen(ctx, in.File, in.NodeID, in.Binding)
+	},
+	Render: func(r service.CodegenResult) string {
+		return r.TSX
+	},
+}
+
 // ---- reconcile ----
 
 type reconcileIn struct {
@@ -307,7 +471,8 @@ type reconcileIn struct {
 }
 
 var reconcileOp = Op[reconcileIn, service.Diff]{
-	Name:    "reconcile",
+	Group:   "verify",
+	Verb:    "reconcile",
 	Summary: "Compare a Figma node against rendered output (deterministic token diff)",
 	Long: "reconcile renders the implementation (story or url), reads its DOM " +
 		"computed styles, and diffs them against the Figma node's exact tokens — " +
@@ -409,4 +574,135 @@ func elementsWith(els []service.ElementDiff, advisory bool) []service.ElementDif
 		}
 	}
 	return out
+}
+
+// --- pixeldiff ---
+
+type pixelDiffIn struct {
+	NodeID    string  `json:"nodeId"    jsonschema:"Figma node id of the frame to compare" cli:"arg"`
+	URL       string  `json:"url"       jsonschema:"rendered implementation to compare against: http(s):// URL, a local HTML file path, or omit to diff against figma-map's own raw codegen render"`
+	File      string  `json:"file"      jsonschema:"Figma file key (default: config or sole connected file)"`
+	Threshold float64 `json:"threshold" jsonschema:"max diff% before match=false (default 5)" default:"5"`
+	ColorTol  int     `json:"colorTol"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
+	DiffOut   string  `json:"diffOut"   jsonschema:"path to write annotated diff PNG (optional)"`
+	GridSize  int     `json:"gridSize"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
+}
+
+var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
+	Group:   "verify",
+	Verb:    "pixeldiff",
+	Summary: "Pixel-level screenshot comparison: Figma design vs browser implementation",
+	Long: "pixeldiff takes a screenshot of the Figma node and a screenshot of the implementation " +
+		"(viewport sized to the node), then compares them pixel-by-pixel. " +
+		"Returns diffPct and match=true when diffPct ≤ threshold, plus a gridSize×gridSize " +
+		"Regions breakdown (per-cell diff%, worst first) — read that instead of the diff image " +
+		"to find where the mismatch is without having to visually interpret an overlay. " +
+		"--url accepts an http(s):// URL for an already-running implementation (dev server, " +
+		"Storybook iframe — should render the component in isolation so both images cover the " +
+		"same region), or a local HTML file path (screenshotted directly, no server needed). " +
+		"Omit --url entirely to diff against figma-map's own raw codegen render (see `render`) — " +
+		"useful before there's a real implementation to point at.",
+	Run: func(ctx context.Context, s *service.Service, in pixelDiffIn) (service.PixelDiffResult, error) {
+		return s.PixelDiff(ctx, in.File, in.NodeID, in.URL, service.PixelDiffOptions{
+			Threshold: in.Threshold,
+			ColorTol:  uint8(in.ColorTol),
+			DiffOut:   in.DiffOut,
+			GridSize:  in.GridSize,
+			Scale:     1,
+		})
+	},
+	Render: func(r service.PixelDiffResult) string {
+		icon := "✓"
+		if !r.Match {
+			icon = "✗"
+		}
+		s := fmt.Sprintf("%s pixel diff: %.2f%% (threshold %.0f%%)\n  %d / %d pixels differ",
+			icon, r.DiffPct, r.Threshold, r.DiffPixels, r.Total)
+		if n := len(r.Regions); n > 0 {
+			top := r.Regions
+			if n > 3 {
+				top = top[:3]
+			}
+			s += "\n  worst regions:"
+			for _, reg := range top {
+				s += fmt.Sprintf("\n    (%d,%d,%d×%d): %.2f%%", reg.X, reg.Y, reg.W, reg.H, reg.DiffPct)
+			}
+		}
+		if r.DiffOut != "" {
+			s += fmt.Sprintf("\n  diff image → %s", r.DiffOut)
+		}
+		return s
+	},
+}
+
+// --- find ---
+
+type findIn struct {
+	Query      string `json:"query"      jsonschema:"text to search in node names (case-insensitive)" cli:"arg"`
+	Text       string `json:"text"       jsonschema:"filter: node must contain this text (TEXT nodes)"`
+	Type       string `json:"type"       jsonschema:"filter: Figma node type, e.g. FRAME, TEXT, INSTANCE"`
+	Mode       string `json:"mode"       jsonschema:"filter: variable mode override value, e.g. Dark, Light, Compact"`
+	Within     string `json:"within"     jsonschema:"restrict search to a specific node subtree (node id)"`
+	File       string `json:"file"       jsonschema:"Figma file key (default: config or sole connected file)"`
+	MaxResults int    `json:"maxResults" jsonschema:"max nodes to return (default 50)" default:"50"`
+}
+
+var findOp = Op[findIn, service.FindResults]{
+	Group:   "figma",
+	Verb:    "find",
+	Summary: "Search Figma nodes by name (and optionally text content or type)",
+	Long: "find walks the entire Figma document tree and returns nodes whose name contains " +
+		"the query string. Use --text to additionally filter by text content, --type to " +
+		"filter by Figma node type (FRAME, TEXT, INSTANCE, COMPONENT, …). " +
+		"Results include node ID, name, type, and breadcrumb path — pipe the ID into codegen or pixeldiff.",
+	Run: func(ctx context.Context, s *service.Service, in findIn) (service.FindResults, error) {
+		return s.Find(ctx, in.File, service.FindOptions{
+			Query:        in.Query,
+			TextQuery:    in.Text,
+			NodeType:     in.Type,
+			Mode:         in.Mode,
+			WithinNodeID: in.Within,
+			MaxResults:   in.MaxResults,
+		})
+	},
+	Render: func(r service.FindResults) string {
+		results := r.Nodes
+		if len(results) == 0 {
+			return "no nodes found"
+		}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "found %d node(s):\n", len(results))
+		for _, r := range results {
+			line := fmt.Sprintf("  %-20s  %-18s  %s", r.ID, r.Type, r.Name)
+			if r.Path != "" {
+				line += "\n" + fmt.Sprintf("  %-20s  %-18s  ↳ %s", "", "", r.Path)
+			}
+			if len(r.VariantModes) > 0 {
+				modes := make([]string, 0, len(r.VariantModes))
+				for k, v := range r.VariantModes {
+					modes = append(modes, k+": "+v)
+				}
+				sort.Strings(modes)
+				line += "\n" + fmt.Sprintf("  %-20s  %-18s  ⬡ %s", "", "", strings.Join(modes, ", "))
+			}
+			if len(r.ComponentProps) > 0 {
+				props := make([]string, 0, len(r.ComponentProps))
+				for k, v := range r.ComponentProps {
+					props = append(props, fmt.Sprintf("%s=%v", k, v))
+				}
+				sort.Strings(props)
+				line += "\n" + fmt.Sprintf("  %-20s  %-18s  ◈ %s", "", "", strings.Join(props, ", "))
+			}
+			if r.Text != "" {
+				short := r.Text
+				if len(short) > 60 {
+					short = short[:60] + "…"
+				}
+				line += "\n" + fmt.Sprintf("  %-20s  %-18s    \"%s\"", "", "", short)
+			}
+			sb.WriteString(line)
+			sb.WriteByte('\n')
+		}
+		return sb.String()
+	},
 }

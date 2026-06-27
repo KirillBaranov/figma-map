@@ -17,3 +17,6 @@
 # Benchmark working dir (regenerable) + scorer binary
 /bench/work/
 /bin-bench
+
+# Default screenshot/render output (see defaultOutPath in internal/service)
+/.figma-map/out/

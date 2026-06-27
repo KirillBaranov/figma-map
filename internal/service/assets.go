@@ -26,15 +26,6 @@ var assetFormats = map[string]string{"PNG": ".png", "SVG": ".svg", "JPG": ".jpg"
 // Production-asset export (e.g. hero images, icons): export, don't regenerate.
 // Deterministic (no API key).
 func (s *Service) ExportAssets(ctx context.Context, fileKey, nodeID, format, outDir string) (ExportResult, error) {
-	format = strings.ToUpper(format)
-	if format == "" {
-		format = "SVG"
-	}
-	ext, ok := assetFormats[format]
-	if !ok {
-		return ExportResult{}, fmt.Errorf("unsupported format %q (use PNG, SVG, or JPG)", format)
-	}
-
 	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return ExportResult{}, err
@@ -43,7 +34,28 @@ func (s *Service) ExportAssets(ctx context.Context, fileKey, nodeID, format, out
 	if err != nil {
 		return ExportResult{}, err
 	}
-	data, err := s.src.Screenshot(ctx, key, nodeID, figma.ScreenshotOpts{Format: format, Scale: 2})
+
+	scale := 2.0
+	format = strings.ToUpper(format)
+	if format == "" {
+		// Prefer the designer's own export preset over guessing — see
+		// figma.ExportSetting.
+		if len(node.ExportSettings) > 0 {
+			preset := node.ExportSettings[0]
+			format = strings.ToUpper(preset.Format)
+			if preset.ConstraintType == "SCALE" && preset.ConstraintValue != nil {
+				scale = *preset.ConstraintValue
+			}
+		} else {
+			format = "SVG"
+		}
+	}
+	ext, ok := assetFormats[format]
+	if !ok {
+		return ExportResult{}, fmt.Errorf("unsupported format %q (use PNG, SVG, or JPG)", format)
+	}
+
+	data, err := s.src.Screenshot(ctx, key, nodeID, figma.ScreenshotOpts{Format: format, Scale: scale})
 	if err != nil {
 		return ExportResult{}, err
 	}

@@ -19,8 +19,15 @@ import (
 
 // Op declares one operation. In is the typed input (its struct tags define both
 // cobra flags and the MCP JSON schema); Out is the typed result.
+//
+// Group+Verb give each surface the representation that suits it from one
+// source of truth: the CLI nests Verb under a Group subcommand
+// (`figma-map figma find`), while MCP gets a flat "group_verb" tool name
+// (`figma_find`) — there's nothing for the two to drift apart on. Group=""
+// (e.g. doctor) stays top-level/flat on both surfaces.
 type Op[In, Out any] struct {
-	Name    string // CLI subcommand + MCP tool name
+	Group   string // "" for ungrouped ops (e.g. doctor)
+	Verb    string // CLI leaf command name
 	Summary string // cobra Short + MCP Description (one source)
 	Long    string // optional extended CLI help
 
@@ -34,22 +41,64 @@ type Op[In, Out any] struct {
 // AddCLI takes a provider because the service depends on --config, which cobra
 // parses only after command construction; AddMCP gets the already-built service.
 type Registrar interface {
-	Meta() (name, summary string)
+	Meta() (mcpName, summary string)
+	CLIPath() []string
 	AddCLI(parent *cobra.Command, get func() *service.Service)
 	AddMCP(srv *mcp.Server, svc *service.Service)
 }
 
-// Meta returns the op's name and one-line summary (the single source used by
-// both the CLI and the MCP tool).
-func (o Op[In, Out]) Meta() (string, string) { return o.Name, o.Summary }
+// mcpName computes the flat MCP tool name: "group_verb", or just "verb" when
+// ungrouped.
+func (o Op[In, Out]) mcpName() string {
+	if o.Group == "" {
+		return o.Verb
+	}
+	return o.Group + "_" + o.Verb
+}
 
-// AddCLI builds the cobra subcommand for this op.
+// Meta returns the op's MCP tool name and one-line summary (the single
+// source used by both the CLI and the MCP tool).
+func (o Op[In, Out]) Meta() (string, string) { return o.mcpName(), o.Summary }
+
+// CLIPath returns the CLI command path: [group, verb], or [verb] when
+// ungrouped.
+func (o Op[In, Out]) CLIPath() []string {
+	if o.Group == "" {
+		return []string{o.Verb}
+	}
+	return []string{o.Group, o.Verb}
+}
+
+// groupSummaries are the cobra Short text for each group's parent command.
+var groupSummaries = map[string]string{
+	"figma":   "Read ground truth from Figma — discovery, structure, tokens, variables",
+	"capture": "Render images — from Figma directly, or from figma-map's own codegen",
+	"build":   "Generate code from a Figma node",
+	"verify":  "Compare generated/implemented code against Figma",
+	"setup":   "One-time project bootstrap — catalog and binding",
+}
+
+// groupCommand returns parent's existing subcommand named group, creating it
+// (and registering it on parent) if this is the first op in that group.
+func groupCommand(parent *cobra.Command, group string) *cobra.Command {
+	for _, c := range parent.Commands() {
+		if c.Name() == group {
+			return c
+		}
+	}
+	cmd := &cobra.Command{Use: group, Short: groupSummaries[group]}
+	parent.AddCommand(cmd)
+	return cmd
+}
+
+// AddCLI builds the cobra subcommand for this op, nested under its Group's
+// subcommand (or directly on parent when ungrouped).
 func (o Op[In, Out]) AddCLI(parent *cobra.Command, get func() *service.Service) {
 	var in In
 	var asJSON bool
 
 	cmd := &cobra.Command{
-		Use:          o.Name,
+		Use:          o.Verb,
 		Short:        o.Summary,
 		Long:         o.Long,
 		SilenceUsage: true,
@@ -57,7 +106,7 @@ func (o Op[In, Out]) AddCLI(parent *cobra.Command, get func() *service.Service) 
 	apply, err := clibind.Register(cmd, &in)
 	if err != nil {
 		// Programmer error in an op's In struct — fail loudly at startup.
-		panic(fmt.Sprintf("op %q: %v", o.Name, err))
+		panic(fmt.Sprintf("op %q: %v", o.mcpName(), err))
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output result as JSON")
 
@@ -85,12 +134,17 @@ func (o Op[In, Out]) AddCLI(parent *cobra.Command, get func() *service.Service) 
 		}
 		return nil
 	}
-	parent.AddCommand(cmd)
+
+	target := parent
+	if o.Group != "" {
+		target = groupCommand(parent, o.Group)
+	}
+	target.AddCommand(cmd)
 }
 
 // AddMCP registers this op as an MCP tool over the same Run.
 func (o Op[In, Out]) AddMCP(srv *mcp.Server, svc *service.Service) {
-	mcp.AddTool(srv, &mcp.Tool{Name: o.Name, Description: o.Summary},
+	mcp.AddTool(srv, &mcp.Tool{Name: o.mcpName(), Description: o.Summary},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 			out, err := o.Run(ctx, svc, in)
 			if err != nil {
