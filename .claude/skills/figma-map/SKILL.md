@@ -73,6 +73,21 @@ Tier-1) need **no API key**. Only `setup bind`, `build map`, `build plan`, and
      convention (Tailwind classes, CSS modules, design tokens, etc.) before
      treating it as done; don't ship inline styles into a codebase that
      doesn't otherwise use them.
+   - Same for `position: absolute` + explicit `left`/`top`: codegen emits
+     that for any frame that isn't using Figma auto-layout — a literal
+     mirror of where the designer happened to drop things on the canvas,
+     not a layout recommendation. Ship it verbatim and you get a page that
+     matches the screenshot but doesn't survive a text change, a translation,
+     or a resize. Look at what's actually there: siblings that read as a row
+     or column (most of them, even when the designer never turned on
+     auto-layout) should become a normal-flow flex/grid container; reserve
+     `position: absolute` for elements that genuinely need to float or
+     overlap (badges, decorative overlays, pinned corners). The spacing/size
+     *values* are still ground truth either way (from `tokens`/the plan) —
+     only the CSS mechanism expressing them is your judgment call, not
+     Figma's, and not something figma-map can decide for you (no
+     structure-guessing heuristics — that's exactly the kind of judgment call
+     that's yours, not the tool's).
    - **Stamp every element you create with `data-figma-node="<id>"`** using the
      node id from the plan. This is the contract that lets reconcile measure your
      output. Untagged elements are reported `unmeasured` (not assumed correct).
@@ -145,5 +160,12 @@ and a human dev can't hit it either.
   not the literal, since that's the actual design-system token.
 - **Don't stop at "looks right."** Stop at `match: true` (or only acceptable
   `unmeasured`/cosmetic items remain, confirmed with the user).
+- **`position: absolute` everywhere is a tell, not a target.** It means you
+  (or codegen's literal scaffold) skipped converting real rows/columns into
+  flex/grid. It'll pass reconcile/pixeldiff — both measure values, not layout
+  resilience — and still be wrong: the result matches the screenshot but
+  breaks the moment text wraps differently, a translation is longer, or the
+  viewport resizes. A human should be able to touch the page (resize it,
+  retype the copy) without it falling apart.
 - The binding is a reviewed artifact; if `build map`/`build plan` pick a wrong
   component or prop, tell the user — the fix belongs in `figma-map.binding.yaml`.
