@@ -204,3 +204,26 @@ func TestMaybeNumRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestCSSColorPrefersCodeSyntax verifies CSSColor emits var(--token) when
+// the paint's bound variable has a designer-set WEB CodeSyntax, falls back
+// to the literal hex otherwise, and never substitutes CodeSyntax when the
+// paint carries fractional opacity (var() can't absorb the extracted alpha).
+func TestCSSColorPrefersCodeSyntax(t *testing.T) {
+	cases := []struct {
+		name string
+		p    Paint
+		want string
+	}{
+		{"opaque with code syntax", Paint{Type: "SOLID", Color: "#18181b", Opacity: 1, CodeSyntax: "--color-brand-primary"}, "var(--color-brand-primary)"},
+		{"opaque without code syntax", Paint{Type: "SOLID", Color: "#18181b", Opacity: 1}, "#18181b"},
+		{"code syntax missing leading --", Paint{Type: "SOLID", Color: "#18181b", Opacity: 1, CodeSyntax: "color-textIcon-default"}, "var(--color-textIcon-default)"},
+		{"fractional opacity ignores code syntax", Paint{Type: "SOLID", Color: "#18181b", Opacity: 0.1, CodeSyntax: "--color-brand-primary"}, "rgba(24, 24, 27, 0.1)"},
+		{"not solid", Paint{Type: "IMAGE", CodeSyntax: "--color-brand-primary"}, ""},
+	}
+	for _, c := range cases {
+		if got := c.p.CSSColor(); got != c.want {
+			t.Errorf("%s: CSSColor() = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

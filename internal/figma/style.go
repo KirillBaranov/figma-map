@@ -94,18 +94,30 @@ type Paint struct {
 	// fill that's #18181b only because that variable currently resolves to
 	// it. Empty means this is a literal, unbound color.
 	Variable string `json:"variable,omitempty"`
+	// CodeSyntax is that variable's designer-set WEB code identifier (e.g.
+	// "--color-brand-primary"), if any. When set, CSSColor() emits
+	// var(--color-brand-primary) instead of the literal hex — ground truth
+	// for the CSS variable's name, not a guess.
+	CodeSyntax string `json:"codeSyntax,omitempty"`
 }
 
-// CSSColor returns the paint's color as a CSS value: the plain hex for an
-// opaque paint, or rgba(...) when the paint itself carries fractional
+// CSSColor returns the paint's color as a CSS value: var(--token) when this
+// paint is bound to a Variable with a designer-set WEB CodeSyntax (ground
+// truth for the project's own token name — preferred whenever the paint is
+// otherwise opaque enough to substitute cleanly), the plain hex for any
+// other opaque paint, or rgba(...) when the paint itself carries fractional
 // opacity (e.g. a 10% tint with backdrop blur) — that opacity is on the
 // paint, separate from the node's own Style.Opacity, and is otherwise lost
-// when only Color is read.
+// when only Color is read. A var() reference can't absorb that extracted
+// alpha, so CodeSyntax is only used in the simple opaque case.
 func (p Paint) CSSColor() string {
 	if p.Type != "SOLID" || p.Color == "" {
 		return ""
 	}
 	if p.Opacity <= 0 || p.Opacity >= 1 {
+		if p.CodeSyntax != "" {
+			return fmt.Sprintf("var(%s)", cssCustomPropertyName(p.CodeSyntax))
+		}
 		return p.Color
 	}
 	r, g, b, ok := hexToRGB(p.Color)
@@ -138,6 +150,17 @@ func FirstSolidVariable(paints []Paint) string {
 		}
 	}
 	return ""
+}
+
+// cssCustomPropertyName ensures a Variable's CodeSyntax reads as a valid CSS
+// custom property name for var(...) — designers sometimes set CodeSyntax
+// without the leading "--" (e.g. "color-brand-primary" rather than
+// "--color-brand-primary"); var() requires it.
+func cssCustomPropertyName(codeSyntax string) string {
+	if strings.HasPrefix(codeSyntax, "--") {
+		return codeSyntax
+	}
+	return "--" + codeSyntax
 }
 
 func hexToRGB(hex string) (r, g, b int, ok bool) {
