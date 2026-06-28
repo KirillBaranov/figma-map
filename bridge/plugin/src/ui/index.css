@@ -1,15 +1,3 @@
-:root {
-  --bg-primary: #0f172b;
-  --text-label: #cad5e2;
-  --text-value: #f1f5f9;
-  --badge-bg: #ffffff;
-  --badge-border: #d5d7da;
-  --badge-text: #414651;
-  --dot-connected: #17b26a;
-  --dot-disconnected: #f04438;
-  --text-white: #ffffff;
-}
-
 * {
   box-sizing: border-box;
   margin: 0;
@@ -19,105 +7,397 @@
 body {
   margin: 0;
   font-family:
-    Inter,
+    "Inter",
     system-ui,
     -apple-system,
     sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-value);
+  background: var(--figma-color-bg, #2c2c2c);
+  color: var(--figma-color-text, #ffffff);
 }
 
 .container {
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 10px;
   height: 100vh;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-banner.connected {
+  background: var(--figma-color-bg-success-tertiary, rgba(27, 196, 125, 0.14));
+  color: var(--figma-color-text-success, #2bd47f);
+}
+
+.status-banner.disconnected {
+  background: var(--figma-color-bg-danger-tertiary, rgba(242, 72, 34, 0.14));
+  color: var(--figma-color-text-danger, #ff6347);
+}
+
+.status-banner .dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-banner.connected .dot {
+  background: var(--figma-color-icon-success, #2bd47f);
+}
+
+.status-banner.disconnected .dot {
+  background: var(--figma-color-icon-danger, #ff6347);
+}
+
+/* A separate ring element scales/fades outward; this only depends on the
+   dot's own background (already proven to resolve), not a second var. */
+.status-banner .dot.pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+.status-meta {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--figma-color-text-secondary, #b3b3b3);
+}
+
+.reconnect-button {
+  margin-left: auto;
+  border: none;
+  background: var(--figma-color-bg-danger, #f24822);
+  color: var(--figma-color-text-ondanger, #ffffff);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.reconnect-button:hover {
+  background: var(--figma-color-bg-danger-hover, #d63d1c);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--figma-color-bg-secondary, #383838);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--figma-color-text-secondary, #b3b3b3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--figma-color-text, #ffffff);
+}
+
+.tab.active {
+  background: var(--figma-color-bg, #2c2c2c);
+  color: var(--figma-color-text, #ffffff);
 }
 
 .info-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  background: var(--figma-color-bg-secondary, #383838);
+  border: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .info-row {
   display: flex;
-  align-items: baseline;
-  font-size: 12px;
-  line-height: 18px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 8px 10px;
+}
+
+.info-row + .info-row {
+  border-top: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+}
+
+.info-row-button {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.info-row-button:first-child {
+  border-top: none;
+}
+
+.info-row-button:not(:disabled):hover {
+  background: var(--figma-color-bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.info-row-button:not(:disabled):active {
+  background: var(--figma-color-bg-pressed, rgba(255, 255, 255, 0.12));
+}
+
+.info-row-button:disabled {
+  cursor: default;
+}
+
+.info-icon {
+  display: flex;
+  align-items: center;
+  color: var(--figma-color-icon-secondary, #b3b3b3);
+  flex-shrink: 0;
 }
 
 .info-label {
-  color: var(--text-label);
-  width: 82px;
+  color: var(--figma-color-text-secondary, #b3b3b3);
+  width: 56px;
   flex-shrink: 0;
 }
 
 .info-value {
-  color: var(--text-value);
-}
-
-.footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--badge-bg);
-  border: 1px solid var(--badge-border);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-}
-
-.badge .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.badge.connected .dot {
-  background: var(--dot-connected);
-}
-
-.badge.disconnected .dot {
-  background: var(--dot-disconnected);
-}
-
-.badge .badge-text {
-  color: var(--badge-text);
+  color: var(--figma-color-text, #ffffff);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
-.branding {
+.copy-hint {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--figma-color-text-brand, #0d99ff);
+}
+
+.prompt-section {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
   gap: 4px;
-  text-decoration: none;
+}
+
+.prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--figma-color-text-secondary, #b3b3b3);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.prompt-copy {
+  border: none;
+  background: transparent;
+  color: var(--figma-color-text-brand, #0d99ff);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.prompt-copy:hover {
+  text-decoration: underline;
+}
+
+.prompt-text {
+  width: 100%;
+  resize: none;
+  background: var(--figma-color-bg-secondary, #383838);
+  border: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  color: var(--figma-color-text, #ffffff);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 8px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debug-toggle {
+  width: 100%;
+  border: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+  background: var(--figma-color-bg-secondary, #383838);
+  color: var(--figma-color-text, #ffffff);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 7px 0;
+  border-radius: 6px;
   cursor: pointer;
 }
 
-.branding:hover {
-  opacity: 0.85;
+.debug-toggle:hover {
+  background: var(--figma-color-bg-hover, rgba(255, 255, 255, 0.08));
 }
 
-.branding .logo {
-  height: 22px;
-  width: auto;
+.debug-panel {
+  border: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.branding .sponsored-text {
-  color: var(--text-white);
+.debug-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--figma-color-bg-secondary, #383838);
   font-size: 10px;
-  line-height: 1.4;
-  text-align: right;
+  color: var(--figma-color-text-secondary, #b3b3b3);
+}
+
+.debug-panel-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.debug-clear {
+  border: none;
+  background: transparent;
+  color: var(--figma-color-text-brand, #0d99ff);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.debug-clear:hover {
+  text-decoration: underline;
+}
+
+.debug-clear:disabled {
+  color: var(--figma-color-text-disabled, #6b6b6b);
+  cursor: default;
+  text-decoration: none;
+}
+
+.debug-log {
+  max-height: 110px;
+  overflow-y: auto;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 10px;
+}
+
+.debug-empty {
+  padding: 10px 8px;
+  color: var(--figma-color-text-tertiary, #8c8c8c);
+  text-align: center;
+}
+
+.debug-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+}
+
+.debug-entry:first-child {
+  border-top: none;
+}
+
+.debug-arrow {
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.debug-entry.in .debug-arrow {
+  color: var(--figma-color-icon-success, #2bd47f);
+}
+
+.debug-entry.out .debug-arrow {
+  color: var(--figma-color-icon-brand, #0d99ff);
+}
+
+.debug-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--figma-color-text, #ffffff);
+}
+
+.debug-time {
+  flex-shrink: 0;
+  color: var(--figma-color-text-tertiary, #8c8c8c);
+}
+
+.footer {
+  margin-top: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.1));
+  font-size: 10px;
+  flex-wrap: wrap;
+}
+
+.footer-link {
+  color: var(--figma-color-text-brand, #0d99ff);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.footer-link:hover {
+  text-decoration: underline;
+}
+
+.footer-sep,
+.footer-text {
+  color: var(--figma-color-text-tertiary, #8c8c8c);
 }
