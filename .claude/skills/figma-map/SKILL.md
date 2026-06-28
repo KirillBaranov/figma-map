@@ -54,14 +54,25 @@ Tier-1) need **no API key**. Only `setup bind`, `build map`, `build plan`, and
 
 1. **`build plan <nodeId>`** — get the buildable spec: container layout, each
    component instance mapped to your code (`import` + `symbol` + `props`), exact
-   `tokens`, and an honest `unmapped` list. This is your blueprint.
+   `tokens`, and an honest `unmapped` list. Each entry also carries a `jsx`
+   field — a matched instance's `jsx` is the ready element in your library's
+   own format (e.g. `<Button variant="primary">Start</Button>`, built from
+   real prop values read off that instance); an unmapped instance's `jsx` is
+   the same raw div/span skeleton `build codegen` would emit, a starting
+   point rather than bare tokens to compose by eye. This is your blueprint.
 
 2. **Write the code** from the plan:
-   - Use the mapped components with their `import`/`props`.
-   - Build `unmapped` pieces by hand using their `tokens` (exact values,
-     including `fillVariable`/`strokeVariable`/`variables` when a value is
-     bound to a Figma Variable rather than a literal — name the value after
-     the variable, don't hardcode it).
+   - Use the mapped components' `jsx` (or `import`/`symbol`/`props` directly).
+   - Build `unmapped` pieces from their `jsx` skeleton, filling in `tokens`
+     (exact values, including `fillVariable`/`strokeVariable`/`variables`
+     when a value is bound to a Figma Variable rather than a literal — name
+     the value after the variable, don't hardcode it).
+   - `build codegen`'s skeleton (and an unmapped instance's `jsx`) always uses
+     inline `style={{...}}` with literal px/hex values — that's a structural
+     scaffold, not final code. Convert it to your project's real styling
+     convention (Tailwind classes, CSS modules, design tokens, etc.) before
+     treating it as done; don't ship inline styles into a codebase that
+     doesn't otherwise use them.
    - **Stamp every element you create with `data-figma-node="<id>"`** using the
      node id from the plan. This is the contract that lets reconcile measure your
      output. Untagged elements are reported `unmeasured` (not assumed correct).
