@@ -17,7 +17,11 @@ type InspectNode struct {
 	Type     string       `json:"type"`
 	Text     string       `json:"text,omitempty"`
 	Bounds   figma.Bounds `json:"bounds"`
-	Tokens   *Tokens      `json:"tokens,omitempty"`
+	// ChildCount is set instead of being walked when this node sits at the
+	// requested depth limit — honest "N more children exist below this" so a
+	// truncated leaf doesn't look like a real one.
+	ChildCount int     `json:"childCount,omitempty"`
+	Tokens     *Tokens `json:"tokens,omitempty"`
 	// Reactions are this node's prototyping reactions — opt-in detail, only
 	// populated alongside Tokens (withTokens=true).
 	Reactions []figma.Reaction `json:"reactions,omitempty"`
@@ -39,7 +43,7 @@ func (s *Service) Inspect(ctx context.Context, fileKey, nodeID string, withToken
 	if err != nil {
 		return InspectResult{}, err
 	}
-	node, err := s.src.Node(ctx, key, nodeID)
+	node, err := s.src.NodeWithDepth(ctx, key, nodeID, depth)
 	if err != nil {
 		return InspectResult{}, err
 	}
@@ -52,6 +56,7 @@ func flatten(res *InspectResult, n *figma.Node, parentID string, cur int, withTo
 	item := InspectNode{
 		ID: n.ID, ParentID: parentID, Depth: cur,
 		Name: n.Name, Type: n.Type, Text: n.Characters, Bounds: n.Bounds,
+		ChildCount: n.ChildCount,
 	}
 	if withTokens {
 		item.Tokens = tokensFromStyle(n.Styles)

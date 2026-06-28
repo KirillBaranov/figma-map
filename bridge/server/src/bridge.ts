@@ -8,6 +8,7 @@ interface PendingRequest {
   reject: (err: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
   ws: WebSocket;
+  startedAt: number;
 }
 
 interface ConnectionEntry {
@@ -69,7 +70,17 @@ export class Bridge {
         if (pending) {
           clearTimeout(pending.timeout);
           this.pending.delete(resp.requestId);
+          const elapsed = Date.now() - pending.startedAt;
+          if (resp.error) {
+            console.error(
+              `✗ ${resp.requestId} ${resp.type} failed after ${elapsed}ms: ${resp.error}`
+            );
+          } else {
+            console.error(`✓ ${resp.requestId} ${resp.type} (${elapsed}ms)`);
+          }
           pending.resolve(resp);
+        } else {
+          console.error(`Response for unknown/expired request ${resp.requestId}`);
         }
       } catch {
         console.error("Invalid response from plugin");
@@ -106,6 +117,7 @@ export class Bridge {
       if (p.ws === ws) {
         clearTimeout(p.timeout);
         this.pending.delete(id);
+        console.error(`✗ ${id} dropped: ${reason}`);
         p.reject(new Error(reason));
       }
     }
@@ -195,17 +207,26 @@ export class Bridge {
         request.params = params;
       }
 
+      const startedAt = Date.now();
+      const target = nodeIds?.length ? ` nodeIds=${nodeIds.join(",")}` : "";
+      const withParams = params ? ` params=${JSON.stringify(params)}` : "";
+      console.error(`→ ${requestId} ${requestType}${target}${withParams}`);
+
       const timeout = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new Error("Request timed out"));
+        console.error(
+          `✗ ${requestId} ${requestType} timed out after ${Date.now() - startedAt}ms${target}`
+        );
+        reject(new Error(`Request timed out: ${requestType} (${requestId})`));
       }, 30_000);
 
-      this.pending.set(requestId, { resolve, reject, timeout, ws: conn });
+      this.pending.set(requestId, { resolve, reject, timeout, ws: conn, startedAt });
 
       conn.send(JSON.stringify(request), (err) => {
         if (err) {
           clearTimeout(timeout);
           this.pending.delete(requestId);
+          console.error(`✗ ${requestId} ${requestType} send failed: ${err.message}`);
           reject(err);
         }
       });

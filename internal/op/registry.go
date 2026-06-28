@@ -643,6 +643,7 @@ type findIn struct {
 	Type       string `json:"type"       jsonschema:"filter: Figma node type, e.g. FRAME, TEXT, INSTANCE"`
 	Mode       string `json:"mode"       jsonschema:"filter: variable mode override value, e.g. Dark, Light, Compact"`
 	Within     string `json:"within"     jsonschema:"restrict search to a specific node subtree (node id)"`
+	Depth      int    `json:"depth"      jsonschema:"max nesting depth to fetch within --within's subtree (0 = unlimited); lower this if a large section times out"`
 	File       string `json:"file"       jsonschema:"Figma file key (default: config or sole connected file)"`
 	MaxResults int    `json:"maxResults" jsonschema:"max nodes to return (default 50)" default:"50"`
 }
@@ -662,6 +663,7 @@ var findOp = Op[findIn, service.FindResults]{
 			NodeType:     in.Type,
 			Mode:         in.Mode,
 			WithinNodeID: in.Within,
+			Depth:        in.Depth,
 			MaxResults:   in.MaxResults,
 		})
 	},
