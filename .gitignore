@@ -11,6 +11,9 @@
 # Local config (may contain machine-specific paths)
 /figma-map.yaml
 
+# Secrets
+.env
+
 # OS
 .DS_Store
 

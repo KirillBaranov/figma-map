@@ -33,7 +33,12 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Load config after flags are parsed, then build the service once.
+		// .env is loaded first so OPENAI_API_KEY (and any other secret) is
+		// picked up automatically without the caller having to export it.
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			if err := config.LoadEnvFile(".env"); err != nil {
+				return fmt.Errorf("load .env: %w", err)
+			}
 			cfg, err := config.Load(configPath)
 			if err != nil {
 				return err
