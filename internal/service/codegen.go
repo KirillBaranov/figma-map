@@ -444,7 +444,11 @@ func buildFrameStyle(s *figma.Style, bounds figma.Bounds, absolute bool, parentB
 	}
 
 	if s.Rotation != nil && *s.Rotation != 0 {
-		p.add("transform", fmt.Sprintf("'rotate(%gdeg)'", *s.Rotation))
+		// Figma's rotation is positive = counter-clockwise; CSS rotate() is
+		// positive = clockwise (even Figma's own Dev Mode panel emits a
+		// negated value for this exact reason) — negate, or every rotated
+		// element comes out spun the wrong way.
+		p.add("transform", fmt.Sprintf("'rotate(%gdeg)'", -*s.Rotation))
 	}
 
 	if s.ClipsContent != nil && *s.ClipsContent {

@@ -31,6 +31,19 @@ func TestBuildFrameStyle_ClipsContent(t *testing.T) {
 	}
 }
 
+// TestBuildFrameStyle_Rotation verifies the CSS rotate() sign is negated
+// relative to Figma's own rotation value — Figma's is positive=counter-
+// clockwise, CSS rotate() is positive=clockwise (Figma's own Dev Mode panel
+// negates for this exact reason), so passing the raw value through verbatim
+// spins every rotated element the wrong way.
+func TestBuildFrameStyle_Rotation(t *testing.T) {
+	rotation := 30.0
+	p := buildFrameStyle(&figma.Style{Rotation: &rotation}, figma.Bounds{Width: 100, Height: 100}, false, figma.Bounds{})
+	if got := p.renderJSX(); !strings.Contains(got, "rotate(-30deg)") {
+		t.Errorf("Figma rotation 30 should become CSS rotate(-30deg), got %s", got)
+	}
+}
+
 // TestBuildFrameStyle_Constraints covers the Phase 0 fix: a MAX constraint on
 // an absolutely-positioned child pins it to the parent's far edge
 // (right/bottom) instead of always emitting left/top.
