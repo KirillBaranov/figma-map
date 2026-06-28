@@ -11,8 +11,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
+
+// waitFontsReady blocks until every @font-face/web-font load the page kicked
+// off has actually finished, via the document.fonts.ready promise — replaces
+// a fixed sleep, which either races a slow font load (capturing text in its
+// fallback-font fallback, the wrong metrics) or wastes time once fonts are
+// already loaded. document.fonts.ready resolves even for documents that
+// never load any custom font at all, so this is a safe no-op there.
+var waitFontsReady = chromedp.ActionFunc(func(ctx context.Context) error {
+	var ok bool
+	return chromedp.Evaluate(`document.fonts.ready.then(() => true)`, &ok,
+		func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}).Do(ctx)
+})
 
 // One headless browser is shared across all renders; each call opens a fresh
 // tab. This keeps an agent's reconcile loop from launching Chrome on every call.
@@ -145,7 +160,7 @@ func Extract(ctx context.Context, url string, width int) ([]DOMElement, error) {
 			chromedp.EmulateViewport(int64(width), 900),
 			chromedp.Navigate(url),
 			chromedp.WaitReady("body", chromedp.ByQuery),
-			chromedp.Sleep(500*time.Millisecond),
+			waitFontsReady,
 			chromedp.Evaluate(extractJS, &els),
 		)
 	})
@@ -167,7 +182,7 @@ func Screenshot(ctx context.Context, url string, width int) ([]byte, error) {
 			chromedp.EmulateViewport(int64(width), 900),
 			chromedp.Navigate(url),
 			chromedp.WaitReady("body", chromedp.ByQuery),
-			chromedp.Sleep(500*time.Millisecond),
+			waitFontsReady,
 			chromedp.CaptureScreenshot(&buf),
 		)
 	})
@@ -197,7 +212,7 @@ func screenshotViewport(url string, w, h int, scale float64) ([]byte, error) {
 			chromedp.EmulateViewport(int64(w), int64(h), chromedp.EmulateScale(scale)),
 			chromedp.Navigate(url),
 			chromedp.WaitReady("body", chromedp.ByQuery),
-			chromedp.Sleep(600*time.Millisecond),
+			waitFontsReady,
 			chromedp.CaptureScreenshot(&buf),
 		)
 	})
