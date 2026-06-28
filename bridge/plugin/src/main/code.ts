@@ -1,9 +1,20 @@
-import { serializeNode, type SerializedNode } from "./serializer";
+import {
+  serializeNode,
+  resolveComponentProps,
+  resolveVariantModes,
+  resolveMainComponentName,
+  createVariableCache,
+} from "./serializer";
+import pkg from "../../package.json";
+
+const PLUGIN_VERSION: string = pkg.version;
 
 type RequestType =
   | "get_document"
   | "get_selection"
   | "get_node"
+  | "find_nodes"
+  | "get_main_component_name"
   | "get_styles"
   | "get_metadata"
   | "get_design_context"
@@ -41,6 +52,20 @@ type ServerRequestParams = Record<string, unknown> & {
    */
   clip?: boolean;
   depth?: number;
+  /** find_nodes: case-insensitive substring match against node name. */
+  query?: string;
+  /** find_nodes: case-insensitive substring match against TEXT characters. */
+  textQuery?: string;
+  /** find_nodes: exact (case-insensitive) Figma node type, e.g. "FRAME". */
+  nodeType?: string;
+  /** find_nodes: case-insensitive substring match against a resolved variant mode name. */
+  mode?: string;
+  /** find_nodes: restrict the search to this node's subtree (default: current page). */
+  withinNodeId?: string;
+  /** find_nodes: cap recursion depth relative to the search root (0 = unlimited). */
+  maxDepth?: number;
+  /** find_nodes: stop once this many matches are found (default 50). */
+  maxResults?: number;
 };
 
 type ServerRequest = {
@@ -88,12 +113,16 @@ const getFileKey = (): string => {
 };
 
 const sendStatus = () => {
+  const selection = figma.currentPage.selection;
   figma.ui.postMessage({
     type: "plugin-status",
     payload: {
       fileName: figma.root.name,
       fileKey: getFileKey(),
-      selectionCount: figma.currentPage.selection.length,
+      selectionCount: selection.length,
+      selectedNodeIds: selection.map((node) => node.id),
+      selectedNodeNames: selection.map((node) => node.name),
+      version: PLUGIN_VERSION,
     },
   });
 };
@@ -366,20 +395,35 @@ const handleRequest = async (
       requireEditorMode(request.type);
     }
     switch (request.type) {
-      case "get_document":
+      case "get_document": {
+        const depth =
+          typeof request.params?.depth === "number"
+            ? request.params.depth
+            : undefined;
         return {
           type: request.type,
           requestId: request.requestId,
-          data: await serializeNode(figma.currentPage as unknown as SceneNode),
+          data: await serializeNode(
+            figma.currentPage as unknown as SceneNode,
+            depth
+          ),
         };
-      case "get_selection":
+      }
+      case "get_selection": {
+        const depth =
+          typeof request.params?.depth === "number"
+            ? request.params.depth
+            : undefined;
         return {
           type: request.type,
           requestId: request.requestId,
           data: await Promise.all(
-            figma.currentPage.selection.map((node) => serializeNode(node))
+            figma.currentPage.selection.map((node) =>
+              serializeNode(node, depth)
+            )
           ),
         };
+      }
       case "get_node": {
         const nodeId = request.nodeIds && request.nodeIds[0];
         if (!nodeId) {
@@ -389,10 +433,159 @@ const handleRequest = async (
         if (!node || node.type === "DOCUMENT") {
           throw new Error(`Node not found: ${nodeId}`);
         }
+        const depth =
+          typeof request.params?.depth === "number"
+            ? request.params.depth
+            : undefined;
         return {
           type: request.type,
           requestId: request.requestId,
-          data: await serializeNode(node as SceneNode),
+          data: await serializeNode(node as SceneNode, depth),
+        };
+      }
+      case "find_nodes": {
+        const params = request.params ?? {};
+        const query =
+          typeof params.query === "string" ? params.query.toLowerCase() : "";
+        const textQuery =
+          typeof params.textQuery === "string"
+            ? params.textQuery.toLowerCase()
+            : "";
+        const nodeType =
+          typeof params.nodeType === "string"
+            ? params.nodeType.toUpperCase()
+            : "";
+        const mode =
+          typeof params.mode === "string" ? params.mode.toLowerCase() : "";
+        const maxDepth =
+          typeof params.maxDepth === "number" ? params.maxDepth : 0;
+        const maxResults =
+          typeof params.maxResults === "number" && params.maxResults > 0
+            ? params.maxResults
+            : 50;
+
+        let root: BaseNode & ChildrenMixin;
+        if (typeof params.withinNodeId === "string") {
+          const found = await figma.getNodeByIdAsync(params.withinNodeId);
+          if (!found || !supportsChildren(found)) {
+            throw new Error(
+              `Node not found or has no children: ${params.withinNodeId}`
+            );
+          }
+          root = found;
+        } else {
+          root = figma.currentPage as unknown as BaseNode & ChildrenMixin;
+        }
+
+        // Cheap, synchronous predicate — no await, no style/variable
+        // resolution. This is what lets find_nodes search a whole document
+        // without paying the per-node async cost that times out get_document.
+        const matchesCheap = (node: SceneNode): boolean => {
+          if (query && !node.name.toLowerCase().includes(query)) return false;
+          if (nodeType && node.type.toUpperCase() !== nodeType) return false;
+          if (textQuery) {
+            const chars = "characters" in node ? node.characters : "";
+            if (!chars.toLowerCase().includes(textQuery)) return false;
+          }
+          return true;
+        };
+
+        type Match = {
+          node: SceneNode;
+          path: string;
+          variantModes?: Record<string, string>;
+        };
+        const matches: Match[] = [];
+        // Shared for the whole walk + enrichment below — repeated matches
+        // (e.g. several instances of the same component) shouldn't each
+        // re-resolve the same variable/collection from scratch.
+        const variableCache = createVariableCache();
+
+        // Depth-first, document order — mirrors the Go walkFind it replaces,
+        // including its early-exit-once-capped behavior.
+        const visit = async (
+          node: BaseNode & ChildrenMixin,
+          path: string,
+          depth: number
+        ): Promise<void> => {
+          for (const child of node.children) {
+            if (matches.length >= maxResults) return;
+            if (child.visible === false) continue;
+            const childPath = path ? `${path} › ${child.name}` : child.name;
+
+            if (matchesCheap(child)) {
+              let variantModes: Record<string, string> | undefined;
+              let modeOk = true;
+              if (mode) {
+                // Resolving variant modes is async — only pay for it on
+                // nodes that already passed the cheap filter AND actually
+                // have explicit modes set (true for a handful of theme-root
+                // frames, never for the bulk of the tree).
+                const hasOwnModes =
+                  "explicitVariableModes" in child &&
+                  Object.keys(
+                    child.explicitVariableModes as Record<string, string>
+                  ).length > 0;
+                if (hasOwnModes) {
+                  variantModes = await resolveVariantModes(child, variableCache);
+                  modeOk = Object.values(variantModes ?? {}).some((v) =>
+                    v.toLowerCase().includes(mode)
+                  );
+                } else {
+                  modeOk = false;
+                }
+              }
+              if (modeOk) {
+                matches.push({ node: child, path, variantModes });
+              }
+            }
+
+            if (matches.length >= maxResults) return;
+            if (
+              supportsChildren(child) &&
+              (maxDepth === 0 || depth < maxDepth)
+            ) {
+              await visit(child, childPath, depth + 1);
+            }
+          }
+        };
+
+        await visit(root, "", 0);
+
+        const resultMatches = await Promise.all(
+          matches.map(async ({ node, path, variantModes }) => ({
+            id: node.id,
+            name: node.name,
+            type: node.type,
+            path,
+            characters: "characters" in node ? node.characters : undefined,
+            componentProps: resolveComponentProps(node),
+            variantModes:
+              variantModes ?? (await resolveVariantModes(node, variableCache)),
+            devStatus: "devStatus" in node ? node.devStatus?.type : undefined,
+          }))
+        );
+
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: { matches: resultMatches },
+        };
+      }
+      case "get_main_component_name": {
+        const nodeId = request.nodeIds && request.nodeIds[0];
+        if (!nodeId) {
+          throw new Error("nodeIds is required for get_main_component_name");
+        }
+        const node = await figma.getNodeByIdAsync(nodeId);
+        if (!node || node.type === "DOCUMENT") {
+          throw new Error(`Node not found: ${nodeId}`);
+        }
+        const name = await resolveMainComponentName(node as SceneNode);
+        return {
+          type: request.type,
+          requestId: request.requestId,
+          data: { name: name ?? null },
         };
       }
       case "get_styles": {
@@ -453,57 +646,17 @@ const handleRequest = async (
       case "get_design_context": {
         const depth =
           typeof request.params?.depth === "number" ? request.params.depth : 2;
-        const serializeWithDepth = async (
-          node: unknown,
-          currentDepth: number
-        ): Promise<SerializedNode> => {
-          const serialized = await serializeNode(node as SceneNode);
-          if (currentDepth >= depth && serialized.children) {
-            // Truncate children at depth limit, but show count
-            return {
-              ...serialized,
-              children: undefined,
-              childCount:
-                (node as ChildrenMixin & SceneNode).children?.filter(
-                  (c) => c.visible !== false
-                ).length ?? 0,
-            } as SerializedNode & { childCount: number };
-          }
-          if (serialized.children) {
-            const childNodes = await Promise.all(
-              serialized.children.map((child) =>
-                figma.getNodeByIdAsync(child.id)
-              )
-            );
-            const serializedChildren = await Promise.all(
-              childNodes
-                .filter(
-                  (n): n is SceneNode =>
-                    n !== null &&
-                    n.type !== "DOCUMENT" &&
-                    "visible" in n &&
-                    n.visible !== false
-                )
-                .map((n) => serializeWithDepth(n, currentDepth + 1))
-            );
-            return {
-              ...serialized,
-              children: serializedChildren,
-            };
-          }
-          return serialized;
-        };
 
         const selection = figma.currentPage.selection;
         const contextNodes =
           selection.length > 0
             ? await Promise.all(
-                selection.map((node) => serializeWithDepth(node, 0))
+                selection.map((node) => serializeNode(node, depth))
               )
             : [
-                await serializeWithDepth(
+                await serializeNode(
                   figma.currentPage as unknown as SceneNode,
-                  0
+                  depth
                 ),
               ];
 
@@ -522,53 +675,98 @@ const handleRequest = async (
         };
       }
       case "get_variable_defs": {
-        const collections =
-          await figma.variables.getLocalVariableCollectionsAsync();
-        const variableData = await Promise.all(
-          collections.map(async (collection) => {
-            const variables = await Promise.all(
-              collection.variableIds.map((id) =>
-                figma.variables.getVariableByIdAsync(id)
+        const buildCollectionEntry = (
+          collection: VariableCollection,
+          variables: Variable[]
+        ) => ({
+          id: collection.id,
+          name: collection.name,
+          modes: collection.modes.map((mode) => ({
+            modeId: mode.modeId,
+            name: mode.name,
+          })),
+          variables: variables.map((variable) => ({
+            id: variable.id,
+            name: variable.name,
+            resolvedType: variable.resolvedType,
+            valuesByMode: Object.fromEntries(
+              Object.entries(variable.valuesByMode).map(
+                ([modeId, value]) => [modeId, serializeVariableValue(value)]
               )
-            );
-            return {
-              id: collection.id,
-              name: collection.name,
-              modes: collection.modes.map((mode) => ({
-                modeId: mode.modeId,
-                name: mode.name,
-              })),
-              variables: variables
-                .filter((v): v is Variable => v !== null)
-                .map((variable) => ({
-                  id: variable.id,
-                  name: variable.name,
-                  resolvedType: variable.resolvedType,
-                  valuesByMode: Object.fromEntries(
-                    Object.entries(variable.valuesByMode).map(
-                      ([modeId, value]) => [
-                        modeId,
-                        serializeVariableValue(value),
-                      ]
-                    )
-                  ),
-                  // codeSyntax: designer-set code identifiers per platform
-                  // (WEB/ANDROID/iOS), e.g. { WEB: "--color-brand-primary" }.
-                  // When populated, this is the single most direct signal of
-                  // "what this variable should be called in code" — no
-                  // guessing needed. scopes: which property types this
-                  // variable is intended for (e.g. CORNER_RADIUS, ALL_FILLS).
-                  codeSyntax: variable.codeSyntax,
-                  scopes: variable.scopes,
-                })),
-            };
+            ),
+            // codeSyntax: designer-set code identifiers per platform
+            // (WEB/ANDROID/iOS), e.g. { WEB: "--color-brand-primary" }.
+            // When populated, this is the single most direct signal of
+            // "what this variable should be called in code" — no
+            // guessing needed. scopes: which property types this
+            // variable is intended for (e.g. CORNER_RADIUS, ALL_FILLS).
+            codeSyntax: variable.codeSyntax,
+            scopes: variable.scopes,
+          })),
+        });
+
+        const localCollections =
+          await figma.variables.getLocalVariableCollectionsAsync();
+        const seenCollectionIds = new Set(localCollections.map((c) => c.id));
+        const localData = await Promise.all(
+          localCollections.map(async (collection) => {
+            const variables = (
+              await Promise.all(
+                collection.variableIds.map((id) =>
+                  figma.variables.getVariableByIdAsync(id)
+                )
+              )
+            ).filter((v): v is Variable => v !== null);
+            return buildCollectionEntry(collection, variables);
           })
         );
+
+        // Variables bound on nodes (boundVariables/fillVariable etc.) resolve
+        // fine even when they come from a published team library, but
+        // getLocalVariableCollectionsAsync only sees collections local to
+        // this file — so a file whose tokens are all library-sourced would
+        // report an empty catalog here despite tokens clearly using them.
+        // Library variables have to be imported by key to read their values.
+        let libraryData: Array<ReturnType<typeof buildCollectionEntry>> = [];
+        try {
+          const libraryCollections =
+            await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+          const entries = await Promise.all(
+            libraryCollections.map(async (libCollection) => {
+              const libVars =
+                await figma.teamLibrary.getVariablesInLibraryCollectionAsync(
+                  libCollection.key
+                );
+              const imported = (
+                await Promise.all(
+                  libVars.map((lv) =>
+                    figma.variables.importVariableByKeyAsync(lv.key)
+                  )
+                )
+              ).filter((v): v is Variable => v !== null);
+              if (imported.length === 0) return null;
+              const collection = await figma.variables.getVariableCollectionByIdAsync(
+                imported[0].variableCollectionId
+              );
+              if (!collection || seenCollectionIds.has(collection.id))
+                return null;
+              seenCollectionIds.add(collection.id);
+              return buildCollectionEntry(collection, imported);
+            })
+          );
+          libraryData = entries.filter(
+            (e): e is NonNullable<typeof e> => e !== null
+          );
+        } catch {
+          // No team libraries enabled / no access — local-only is still
+          // useful, so don't fail the whole request over this.
+        }
+
         return {
           type: request.type,
           requestId: request.requestId,
           data: {
-            collections: variableData,
+            collections: [...localData, ...libraryData],
           },
         };
       }
@@ -679,29 +877,39 @@ const handleRequest = async (
             }
 
             if (Object.keys(ancestorModes).length > 0) {
-              // Step 1: apply all inherited + own explicit modes to the page.
-              const wantedNames = new Set<string>();
-              for (const [collectionId, modeId] of Object.entries(ancestorModes)) {
-                const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
-                if (!collection) continue;
-                const pageModes = page.explicitVariableModes as Record<string, string>;
-                savedModes.push({ collection, modeId: pageModes[collectionId] ?? null });
-                page.setExplicitVariableModeForCollection(collection, modeId);
-                const mode = collection.modes.find((m) => m.modeId === modeId);
-                if (mode) wantedNames.add(mode.name);
-              }
-
-              // Step 2: propagate mode names to remaining collections (foundation/base etc).
-              if (wantedNames.size > 0) {
-                const allCollections = await figma.variables.getLocalVariableCollectionsAsync();
-                for (const collection of allCollections) {
-                  if (ancestorModes[collection.id]) continue;
-                  const match = collection.modes.find((m) => wantedNames.has(m.name));
-                  if (!match) continue;
+              try {
+                // Step 1: apply all inherited + own explicit modes to the page.
+                const wantedNames = new Set<string>();
+                for (const [collectionId, modeId] of Object.entries(ancestorModes)) {
+                  const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
+                  if (!collection) continue;
                   const pageModes = page.explicitVariableModes as Record<string, string>;
-                  savedModes.push({ collection, modeId: pageModes[collection.id] ?? null });
-                  page.setExplicitVariableModeForCollection(collection, match.modeId);
+                  savedModes.push({ collection, modeId: pageModes[collectionId] ?? null });
+                  page.setExplicitVariableModeForCollection(collection, modeId);
+                  const mode = collection.modes.find((m) => m.modeId === modeId);
+                  if (mode) wantedNames.add(mode.name);
                 }
+
+                // Step 2: propagate mode names to remaining collections (foundation/base etc).
+                if (wantedNames.size > 0) {
+                  const allCollections = await figma.variables.getLocalVariableCollectionsAsync();
+                  for (const collection of allCollections) {
+                    if (ancestorModes[collection.id]) continue;
+                    const match = collection.modes.find((m) => wantedNames.has(m.name));
+                    if (!match) continue;
+                    const pageModes = page.explicitVariableModes as Record<string, string>;
+                    savedModes.push({ collection, modeId: pageModes[collection.id] ?? null });
+                    page.setExplicitVariableModeForCollection(collection, match.modeId);
+                  }
+                }
+              } catch (err) {
+                // Read-only access (viewer permission) means none of the above
+                // mode-set calls actually took effect — nothing to restore, so
+                // drop the records and fall back to rendering with whatever
+                // mode is currently active on the page rather than aborting.
+                const msg = err instanceof Error ? err.message : String(err);
+                if (!msg.includes("read-only")) throw err;
+                savedModes.length = 0;
               }
             }
 
@@ -1784,7 +1992,7 @@ const handleRequest = async (
   }
 };
 
-figma.showUI(__html__, { width: 320, height: 180 });
+figma.showUI(__html__, { width: 328, height: 380, themeColors: true });
 sendStatus();
 
 figma.on("selectionchange", () => {

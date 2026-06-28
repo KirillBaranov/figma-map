@@ -8,6 +8,10 @@ type SerializedSolidPaint = {
   // caller know e.g. this #18181b is really Color/Brand/Primary, not a
   // hardcoded value, without guessing.
   variable?: string;
+  // The bound variable's designer-set WEB code identifier (e.g.
+  // "--color-brand-primary"), if any — lets a caller emit var(--...) instead
+  // of the literal color, with zero guessing about the CSS variable's name.
+  codeSyntax?: string;
 };
 
 type SerializedGradientPaint = {
@@ -201,15 +205,61 @@ const serializeGradientStops = (
     position: stop.position,
   }));
 
+// Memoizes figma.variables.getVariableByIdAsync/getVariableCollectionByIdAsync
+// for the lifetime of a single serializeNode() tree walk. Components designers
+// actually reuse (avatar groups, lists, tables) bind many sibling/descendant
+// nodes to the *same* handful of variables — without this, each occurrence
+// re-resolves the same variable/collection from scratch, and on a
+// library-sourced variable that resolution is a real network call, so a
+// component with a few dozen repeated bindings can blow well past the
+// bridge's 30s timeout despite having a tiny tree.
+export type VariableCache = {
+  variables: Map<string, Promise<Variable | null>>;
+  collections: Map<string, Promise<VariableCollection | null>>;
+};
+
+export const createVariableCache = (): VariableCache => ({
+  variables: new Map(),
+  collections: new Map(),
+});
+
+const getVariableCached = (
+  cache: VariableCache,
+  id: string
+): Promise<Variable | null> => {
+  let p = cache.variables.get(id);
+  if (!p) {
+    p = figma.variables.getVariableByIdAsync(id);
+    cache.variables.set(id, p);
+  }
+  return p;
+};
+
+const getCollectionCached = (
+  cache: VariableCache,
+  id: string
+): Promise<VariableCollection | null> => {
+  let p = cache.collections.get(id);
+  if (!p) {
+    p = figma.variables.getVariableCollectionByIdAsync(id);
+    cache.collections.set(id, p);
+  }
+  return p;
+};
+
 // Resolves a Figma variable alias chain to an RGB color value.
 // Follows VARIABLE_ALIAS chains up to 8 levels deep.
 // Returns null if the variable is not a COLOR type or cannot be resolved.
-const resolveVariableColor = async (alias: VariableAlias): Promise<RGB | null> => {
+const resolveVariableColor = async (
+  alias: VariableAlias,
+  cache: VariableCache
+): Promise<RGB | null> => {
   let id = alias.id;
   for (let i = 0; i < 8; i++) {
-    const variable = await figma.variables.getVariableByIdAsync(id);
+    const variable = await getVariableCached(cache, id);
     if (!variable || variable.resolvedType !== "COLOR") return null;
-    const collection = await figma.variables.getVariableCollectionByIdAsync(
+    const collection = await getCollectionCached(
+      cache,
       variable.variableCollectionId
     );
     const modeId =
@@ -238,17 +288,31 @@ const resolveVariableColor = async (alias: VariableAlias): Promise<RGB | null> =
 // Button/Bg-Primary which itself aliases Color/Brand/Primary reports
 // "Button/Bg-Primary", since that's the variable the designer actually
 // attached here. Ground truth about the binding itself, not the value chain.
-const resolveVariableLabel = async (id: string): Promise<string | undefined> => {
-  const variable = await figma.variables.getVariableByIdAsync(id);
+type VariableLabel = {
+  label: string;
+  // The designer-set WEB code identifier for this variable (e.g.
+  // "--color-brand-primary"), if any — ground truth for what to call this
+  // in code, no guessing needed. Undefined when the designer never set one.
+  codeSyntax?: string;
+};
+
+const resolveVariableLabel = async (
+  id: string,
+  cache: VariableCache
+): Promise<VariableLabel | undefined> => {
+  const variable = await getVariableCached(cache, id);
   if (!variable) return undefined;
-  const collection = await figma.variables.getVariableCollectionByIdAsync(
+  const collection = await getCollectionCached(
+    cache,
     variable.variableCollectionId
   );
-  return collection ? `${collection.name}/${variable.name}` : variable.name;
+  const label = collection ? `${collection.name}/${variable.name}` : variable.name;
+  return { label, codeSyntax: variable.codeSyntax?.WEB };
 };
 
 const serializePaints = async (
-  paints: readonly Paint[] | symbol | undefined
+  paints: readonly Paint[] | symbol | undefined,
+  cache: VariableCache
 ): Promise<SerializedPaint[] | "mixed"> => {
   if (isMixed(paints)) return "mixed";
   if (!paints || !Array.isArray(paints)) return [];
@@ -263,17 +327,18 @@ const serializePaints = async (
         // for the current mode. paint.color may hold the pre-binding default
         // rather than the resolved value in some Figma API contexts.
         const colorAlias = (paint as SolidPaint).boundVariables?.color;
-        let variableLabel: string | undefined;
+        let variableLabel: VariableLabel | undefined;
         if (colorAlias) {
-          const resolved = await resolveVariableColor(colorAlias);
+          const resolved = await resolveVariableColor(colorAlias, cache);
           if (resolved) color = resolved;
-          variableLabel = await resolveVariableLabel(colorAlias.id);
+          variableLabel = await resolveVariableLabel(colorAlias.id, cache);
         }
         result.push({
           type: "SOLID",
           color: toHex(color),
           opacity: paint.opacity,
-          variable: variableLabel,
+          variable: variableLabel?.label,
+          codeSyntax: variableLabel?.codeSyntax,
         });
         break;
       }
@@ -393,7 +458,10 @@ const serializeText = async (node: TextNode, base: SerializedNode) => {
   };
 };
 
-const serializeStyles = async (node: SceneNode): Promise<SerializedStyles> => {
+const serializeStyles = async (
+  node: SceneNode,
+  cache: VariableCache
+): Promise<SerializedStyles> => {
   const styles: SerializedStyles = {};
 
   if ("opacity" in node) {
@@ -407,10 +475,10 @@ const serializeStyles = async (node: SceneNode): Promise<SerializedStyles> => {
   }
 
   if ("fills" in node) {
-    styles.fills = await serializePaints(node.fills);
+    styles.fills = await serializePaints(node.fills, cache);
   }
   if ("strokes" in node) {
-    styles.strokes = await serializePaints(node.strokes);
+    styles.strokes = await serializePaints(node.strokes, cache);
   }
   if ("strokeWeight" in node) {
     styles.strokeWeight = isMixed(node.strokeWeight)
@@ -536,7 +604,7 @@ const serializeStyles = async (node: SceneNode): Promise<SerializedStyles> => {
     styles.layoutAlign = "STRETCH";
   }
 
-  const boundVariables = await resolveBoundVariables(node);
+  const boundVariables = await resolveBoundVariables(node, cache);
   if (boundVariables) {
     styles.boundVariables = boundVariables;
   }
@@ -551,7 +619,8 @@ const serializeStyles = async (node: SceneNode): Promise<SerializedStyles> => {
 // are per-paint/per-style-slot arrays or maps, not a single VariableAlias —
 // fills/strokes are already covered per-paint by SerializedSolidPaint.variable.
 const resolveBoundVariables = async (
-  node: SceneNode
+  node: SceneNode,
+  cache: VariableCache
 ): Promise<Record<string, string> | undefined> => {
   if (!("boundVariables" in node) || !node.boundVariables) return undefined;
   const excluded = new Set([
@@ -567,24 +636,26 @@ const resolveBoundVariables = async (
     if (!binding || Array.isArray(binding) || typeof binding !== "object") continue;
     const alias = binding as VariableAlias;
     if (alias.type !== "VARIABLE_ALIAS") continue;
-    const label = await resolveVariableLabel(alias.id);
-    if (label) result[field] = label;
+    const resolved = await resolveVariableLabel(alias.id, cache);
+    if (resolved) result[field] = resolved.label;
   }
   return Object.keys(result).length > 0 ? result : undefined;
 };
 
 // Resolves explicitVariableModes (collectionId → modeId) to human-readable names.
 // Returns e.g. { "Color Semantic": "Dark", "Spacing": "Compact" }
-const resolveVariantModes = async (
-  node: SceneNode
+// Exported for find_nodes (code.ts), which resolves this only for nodes that
+// already passed a cheap sync filter, instead of for every node in the tree.
+export const resolveVariantModes = async (
+  node: SceneNode,
+  cache: VariableCache
 ): Promise<Record<string, string> | undefined> => {
   if (!("explicitVariableModes" in node)) return undefined;
   const raw = node.explicitVariableModes as Record<string, string>;
   if (!raw || Object.keys(raw).length === 0) return undefined;
   const result: Record<string, string> = {};
   for (const [collectionId, modeId] of Object.entries(raw)) {
-    const collection =
-      await figma.variables.getVariableCollectionByIdAsync(collectionId);
+    const collection = await getCollectionCached(cache, collectionId);
     if (!collection) continue;
     const mode = collection.modes.find((m) => m.modeId === modeId);
     if (mode) result[collection.name] = mode.name;
@@ -594,11 +665,21 @@ const resolveVariantModes = async (
 
 // Extracts component property values from an INSTANCE node.
 // Returns e.g. { "State": "Hover", "Size": "M", "hasIcon": true }
-const resolveComponentProps = (
+// Exported for find_nodes (code.ts) — see resolveVariantModes above.
+export const resolveComponentProps = (
   node: SceneNode
 ): Record<string, string | boolean> | undefined => {
   if (node.type !== "INSTANCE") return undefined;
-  const props = (node as InstanceNode).componentProperties;
+  let props: InstanceNode["componentProperties"];
+  try {
+    // Throws for instances of a component set Figma flags as having
+    // "existing errors" — that's a property of the set, not something this
+    // plugin can fix, so skip props for this node rather than aborting the
+    // whole subtree serialization.
+    props = (node as InstanceNode).componentProperties;
+  } catch {
+    return undefined;
+  }
   if (!props) return undefined;
   const result: Record<string, string | boolean> = {};
   for (const [key, prop] of Object.entries(props)) {
@@ -686,21 +767,78 @@ const resolveExportSettings = (
 const resolveDevResources = async (
   node: SceneNode
 ): Promise<{ name: string; url: string }[] | undefined> => {
+  // getDevResourcesAsync hits Figma's own related_links REST endpoint — a
+  // real network call against the user's (or their org's) Figma account,
+  // not local document data. Dev Resources are a Dev Mode concept, so only
+  // spend that network call when the plugin is actually running in Dev
+  // Mode — otherwise every find_nodes/get_selection/get_document/get_node
+  // call would burn a network round-trip per node for a field nobody in
+  // Design mode asked for, and risk hitting Figma's own rate limits.
+  if (figma.editorType !== "dev") return undefined;
   if (!("getDevResourcesAsync" in node)) return undefined;
-  const resources = await node.getDevResourcesAsync();
+  let resources: Awaited<ReturnType<typeof node.getDevResourcesAsync>>;
+  try {
+    // Can still reject (e.g. 403 on an unsaved/duplicated file) for reasons
+    // that have nothing to do with the node itself — this is optional
+    // enrichment, so a failure here shouldn't take down the rest of an
+    // otherwise-successful response.
+    resources = await node.getDevResourcesAsync();
+  } catch {
+    return undefined;
+  }
   if (resources.length === 0) return undefined;
   return resources.map((r) => ({ name: r.name, url: r.url }));
 };
 
-export const serializeNode = async (node: SceneNode): Promise<SerializedNode> => {
+// Resolves an INSTANCE's main-component family name: the COMPONENT_SET name
+// for a variant (e.g. "Button"), or the main component's own name when it
+// isn't part of a set. Deliberately NOT wired into serializeNode's generic
+// base fields — that would resolve it for every INSTANCE in a whole-tree
+// fetch (get_node/get_document/get_selection), even nested ones nobody asked
+// about, repeating the exact "pay for every node" mistake this file's other
+// caches/gates exist to avoid. Used only by the dedicated
+// get_main_component_name RPC (code.ts), called once per node actually being
+// matched (map/plan's tier-1 name match), never as part of a bulk tree walk.
+export const resolveMainComponentName = async (
+  node: SceneNode
+): Promise<string | undefined> => {
+  if (node.type !== "INSTANCE") return undefined;
+  try {
+    const main = await node.getMainComponentAsync();
+    if (!main) return undefined;
+    const parent = main.parent;
+    return parent && parent.type === "COMPONENT_SET" ? parent.name : main.name;
+  } catch {
+    // A main component living in an unavailable/unpublished library can
+    // reject — this is an optional matching hint, not load-bearing data.
+    return undefined;
+  }
+};
+
+// maxDepth bounds recursion: 0/undefined means unlimited (the original
+// behavior every other call site relies on). depth is the current node's
+// distance from the call's root (0 at the root). Past maxDepth, children are
+// dropped and reported as childCount instead of being walked at all — this
+// is a depth *limit*, not depth-then-discard, so a huge subtree past the
+// limit costs nothing (get_design_context used to fully serialize every
+// descendant before truncating the JSON, which is why deep sections could
+// time out regardless of the requested depth).
+export const serializeNode = async (
+  node: SceneNode,
+  maxDepth?: number,
+  depth = 0,
+  // Shared across the whole tree walk (created once at the root call, then
+  // threaded through every recursive call) — see VariableCache above for why.
+  cache: VariableCache = createVariableCache()
+): Promise<SerializedNode> => {
   const base: SerializedNode = {
     id: node.id,
     name: node.name,
     type: node.type,
     bounds: getBounds(node),
-    styles: await serializeStyles(node),
+    styles: await serializeStyles(node, cache),
     componentProps: resolveComponentProps(node),
-    variantModes: await resolveVariantModes(node),
+    variantModes: await resolveVariantModes(node, cache),
     gridPosition: resolveGridPosition(node),
     reactions: resolveReactions(node),
     devStatus: "devStatus" in node ? node.devStatus?.type : undefined,
@@ -714,10 +852,14 @@ export const serializeNode = async (node: SceneNode): Promise<SerializedNode> =>
   }
 
   if ("children" in node) {
+    const visibleChildren = node.children.filter((child) => child.visible !== false);
+    if (maxDepth && depth >= maxDepth) {
+      return { ...base, childCount: visibleChildren.length };
+    }
     const children = await Promise.all(
-      node.children
-        .filter((child) => child.visible !== false)
-        .map((child) => serializeNode(child))
+      visibleChildren.map((child) =>
+        serializeNode(child, maxDepth, depth + 1, cache)
+      )
     );
     return { ...base, children };
   }

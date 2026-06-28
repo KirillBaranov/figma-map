@@ -126,9 +126,13 @@ export function registerTools(
     "get_selection",
     "Get the currently selected nodes in Figma. When multiple files are connected, specify fileKey.",
     toolInputSchemas.get_selection.shape,
-    async ({ fileKey }): Promise<ToolResult> => {
+    async ({ depth, fileKey }): Promise<ToolResult> => {
+      const params: Record<string, unknown> = {};
+      if (depth !== undefined && depth > 0) {
+        params.depth = depth;
+      }
       return renderResponse(() =>
-        node.send("get_selection", undefined, fileKey)
+        node.sendWithParams("get_selection", undefined, params, fileKey)
       );
     }
   );
@@ -139,6 +143,28 @@ export function registerTools(
     toolInputSchemas.get_node.shape,
     async ({ nodeId, fileKey }): Promise<ToolResult> => {
       return renderResponse(() => node.send("get_node", [nodeId], fileKey));
+    }
+  );
+
+  server.tool(
+    "find_nodes",
+    "Search the Figma node tree by name (and optionally text content, node type, or variable mode), without paying for full style/variable resolution on non-matching nodes. Use this instead of get_document + client-side filtering for anything beyond a tiny page — get_document fully resolves styles/variables/dev-resources for every node and times out on large files. Returns matches with id, name, type, breadcrumb path, text, componentProps, variantModes, and devStatus. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.find_nodes.shape,
+    async ({ fileKey, ...params }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.sendWithParams("find_nodes", undefined, params, fileKey)
+      );
+    }
+  );
+
+  server.tool(
+    "get_main_component_name",
+    "Resolve an INSTANCE's main-component family name — the COMPONENT_SET name for a variant, or the main component's own name otherwise. Ground truth for 'which component is this', independent of how this particular instance's layer was renamed. When multiple files are connected, specify fileKey.",
+    toolInputSchemas.get_main_component_name.shape,
+    async ({ nodeId, fileKey }): Promise<ToolResult> => {
+      return renderResponse(() =>
+        node.send("get_main_component_name", [nodeId], fileKey)
+      );
     }
   );
 

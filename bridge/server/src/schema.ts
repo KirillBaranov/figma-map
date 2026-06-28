@@ -498,12 +498,54 @@ export const toolInputSchemas = {
   }),
 
   get_selection: z.object({
+    depth: z
+      .number()
+      .optional()
+      .describe("How many levels deep to traverse each selected node's tree (default: unlimited)"),
     fileKey: fileKeyField,
   }),
 
   get_node: z.object({
     nodeId: figmaNodeId.describe(
       "The node ID to fetch. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'."
+    ),
+    fileKey: fileKeyField,
+  }),
+
+  find_nodes: z.object({
+    query: z
+      .string()
+      .optional()
+      .describe("Case-insensitive substring match against node name. Omit to match all names."),
+    textQuery: z
+      .string()
+      .optional()
+      .describe("Case-insensitive substring match against a TEXT node's characters."),
+    nodeType: z
+      .string()
+      .optional()
+      .describe("Exact (case-insensitive) Figma node type to match, e.g. FRAME, TEXT, INSTANCE."),
+    mode: z
+      .string()
+      .optional()
+      .describe("Case-insensitive substring match against a resolved variable mode name, e.g. Dark."),
+    withinNodeId: figmaNodeId
+      .optional()
+      .describe("Restrict the search to this node's subtree. Omit to search the whole current page."),
+    maxDepth: z
+      .number()
+      .optional()
+      .describe("Cap recursion depth relative to the search root (0 or omitted = unlimited)."),
+    maxResults: z
+      .number()
+      .optional()
+      .describe("Stop once this many matches are found (default 50)."),
+    fileKey: fileKeyField,
+  }),
+
+  get_main_component_name: z.object({
+    nodeId: figmaNodeId.describe(
+      "The INSTANCE node ID to resolve. Returns the COMPONENT_SET name for a variant, or the main component's own name otherwise — null if the node isn't an INSTANCE or its main component can't be resolved."
     ),
     fileKey: fileKeyField,
   }),
@@ -728,6 +770,8 @@ const rpcToArgs: Record<
   get_document: (_nodeIds, params) => ({ ...params }),
   get_selection: (_nodeIds, params) => ({ ...params }),
   get_node: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
+  find_nodes: (_nodeIds, params) => ({ ...params }),
+  get_main_component_name: (nodeIds, params) => ({ ...params, nodeId: nodeIds?.[0] }),
   get_styles: (_nodeIds, params) => ({ ...params }),
   get_metadata: (_nodeIds, params) => ({ ...params }),
   get_design_context: (_nodeIds, params) => ({ ...params }),

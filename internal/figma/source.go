@@ -25,6 +25,10 @@ type Node struct {
 	Bounds     Bounds `json:"bounds"`
 	Styles     *Style `json:"styles,omitempty"`
 	Children   []Node `json:"children,omitempty"`
+	// ChildCount is set instead of Children when a depth-limited fetch (see
+	// NodeWithDepth) truncates below this node — an honest "N more children
+	// exist but weren't walked", not a silent leaf.
+	ChildCount int `json:"childCount,omitempty"`
 	// ComponentProps holds variant/property values for INSTANCE nodes,
 	// e.g. {"State": "Hover", "Size": "M", "hasIcon": true}.
 	ComponentProps map[string]any `json:"componentProps,omitempty"`
@@ -159,8 +163,21 @@ type Source interface {
 	Files(ctx context.Context) ([]File, error)
 	// Document returns the current page's node tree for the given file.
 	Document(ctx context.Context, fileKey string) (*Node, error)
-	// Node returns a single node by id.
+	// DocumentWithDepth returns the current page's node tree, recursion
+	// capped at depth (0 = unlimited, same as Document). Use this over
+	// Document when only a shallow view is needed (e.g. `bind`, which only
+	// reads direct FRAME children), so the source doesn't fully serialize
+	// every section's subtree just to discard it.
+	DocumentWithDepth(ctx context.Context, fileKey string, depth int) (*Node, error)
+	// Node returns a single node by id, fully recursed.
 	Node(ctx context.Context, fileKey, id string) (*Node, error)
+	// NodeWithDepth returns a single node by id, recursion capped at depth
+	// (0 = unlimited, same as Node). Nodes beyond the cap report ChildCount
+	// instead of Children — use this over Node when the subtree could be
+	// large and the caller only needs a shallow view (e.g. `inspect --depth`,
+	// `find --within`), so the source doesn't walk/serialize work that would
+	// just be discarded.
+	NodeWithDepth(ctx context.Context, fileKey, id string, depth int) (*Node, error)
 	// Selection returns the nodes currently selected in the editor.
 	Selection(ctx context.Context, fileKey string) ([]Node, error)
 	// Screenshot renders a node to image bytes.
@@ -171,6 +188,55 @@ type Source interface {
 	// VariableDefs returns the file's full local-variable catalog (every
 	// collection/variable/mode), independent of any specific node.
 	VariableDefs(ctx context.Context, fileKey string) (VariableDefs, error)
+	// FindNodes searches fileKey's tree for nodes matching opts, filtering
+	// inside the plugin sandbox — the only way to search a whole-document
+	// tree without paying full style/variable serialization for every node
+	// (get_document/get_node have no such filter and routinely exceed the
+	// bridge's 30s per-request timeout on a non-trivial file).
+	FindNodes(ctx context.Context, fileKey string, opts FindNodesOptions) ([]FindMatch, error)
+	// MainComponentName resolves an INSTANCE's main-component family name —
+	// the COMPONENT_SET name for a variant, or the main component's own name
+	// otherwise — empty if id isn't an INSTANCE or its main component can't
+	// be resolved. Deliberately a separate call rather than a Node field: it
+	// is only ever needed for the one node actually being matched (bind/map/
+	// plan's tier-1 name match), never for every INSTANCE in a bulk tree
+	// fetch.
+	MainComponentName(ctx context.Context, fileKey, id string) (string, error)
+}
+
+// FindNodesOptions controls a FindNodes search.
+type FindNodesOptions struct {
+	// Query matches against node name (case-insensitive substring). Empty = match all.
+	Query string
+	// TextQuery additionally requires the node's text content to contain this string.
+	TextQuery string
+	// NodeType filters to nodes of this Figma type (e.g. "FRAME", "TEXT", "INSTANCE").
+	// Empty means all types.
+	NodeType string
+	// Mode filters to nodes that have a variable mode override whose name contains this string.
+	Mode string
+	// WithinNodeID restricts the search to a specific node subtree. Empty means the whole document.
+	WithinNodeID string
+	// MaxDepth caps recursion depth relative to the search root (0 = unlimited).
+	MaxDepth int
+	// MaxResults caps how many matches are returned (0 = source default).
+	MaxResults int
+}
+
+// FindMatch is one node returned by FindNodes — already filtered, and
+// deliberately lean: no styles, no bound-variable resolution, no
+// dev-resources, since a search doesn't need any of that.
+type FindMatch struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	// Path is the breadcrumb from the search root to this node's parent,
+	// e.g. "Page › Frame › Group" — ancestors only, not including this node.
+	Path           string            `json:"path"`
+	Characters     string            `json:"characters,omitempty"`
+	VariantModes   map[string]string `json:"variantModes,omitempty"`
+	ComponentProps map[string]any    `json:"componentProps,omitempty"`
+	DevStatus      string            `json:"devStatus,omitempty"`
 }
 
 // TopLevelFrames returns the direct FRAME children of the document root. On the

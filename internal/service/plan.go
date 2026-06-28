@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
+	"strings"
 
 	"github.com/kirillbaranov/figma-map/internal/binding"
 	"github.com/kirillbaranov/figma-map/internal/figma"
@@ -45,6 +47,10 @@ type PlanComponent struct {
 	Bounds     figma.Bounds      `json:"bounds"`
 	Tokens     *Tokens           `json:"tokens,omitempty"`
 	Confidence float64           `json:"confidence"`
+	// JSX is the ready-to-paste element in your library's own format, e.g.
+	// `<Button variant="primary">Start</Button>` — built from Symbol/Props,
+	// not guessed.
+	JSX string `json:"jsx,omitempty"`
 }
 
 // PlanUnmapped is a component instance figma-map could not map — surfaced
@@ -56,6 +62,10 @@ type PlanUnmapped struct {
 	Bounds figma.Bounds `json:"bounds"`
 	Tokens *Tokens      `json:"tokens,omitempty"`
 	Reason string       `json:"reason"`
+	// JSX is the same raw markup `build codegen` would emit for this node —
+	// a div/span tree with inline styles from its Figma tokens — so the
+	// agent has a starting skeleton instead of bare tokens to compose by eye.
+	JSX string `json:"jsx,omitempty"`
 }
 
 // Plan maps every component instance in a frame to code. Uses the LLM for
@@ -79,7 +89,18 @@ func (s *Service) Plan(ctx context.Context, fileKey, frameID string, depth int, 
 		return Plan{}, err
 	}
 
-	frame, err := s.src.Node(ctx, key, frameID)
+	// Bound the fetch itself by depth, not just the local collectInstances
+	// walk below — otherwise --depth does nothing to avoid a timeout on a
+	// large frame, since the network fetch would still pull the whole
+	// subtree unbounded before depth was ever consulted. fetchDepth is one
+	// more than collectInstances' depth: collectInstances examines a node's
+	// children at cur==depth without recursing further, so those children
+	// (one level past depth) must still be present in the fetched tree.
+	fetchDepth := 0
+	if depth > 0 {
+		fetchDepth = depth + 1
+	}
+	frame, err := s.src.NodeWithDepth(ctx, key, frameID, fetchDepth)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -91,6 +112,8 @@ func (s *Service) Plan(ctx context.Context, fileKey, frameID string, depth int, 
 
 	instances := collectInstances(frame, depth)
 	p.emit(fmt.Sprintf("Planning %s: %d component instance(s) …", frame.Name, len(instances)))
+
+	gen := &codeGen{b: b, ctx: ctx, src: s.src, fileKey: key}
 
 	// Dedupe identical instances so the LLM is paid once per distinct one.
 	type outcome struct {
@@ -109,10 +132,10 @@ func (s *Service) Plan(ctx context.Context, fileKey, frameID string, depth int, 
 			png, err := s.src.Screenshot(ctx, key, inst.ID, figma.ScreenshotOpts{Scale: 2})
 			if err != nil {
 				oc = outcome{}
-			} else if comp, name, score, err := matchBound(ctx, client, b, catalog, catalogDir, inst, png); err != nil {
+			} else if comp, name, score, err := matchBound(ctx, s.src, key, client, b, catalog, catalogDir, inst, png); err != nil {
 				oc = outcome{}
 			} else {
-				props, _ := inferPropValues(ctx, client, png, comp)
+				props, _ := inferPropValues(ctx, client, png, comp, inst.ComponentProps)
 				oc = outcome{matched: true, comp: comp, name: name, score: score, props: props}
 			}
 			cache[k] = oc
@@ -123,11 +146,13 @@ func (s *Service) Plan(ctx context.Context, fileKey, frameID string, depth int, 
 				NodeID: inst.ID, Component: oc.name, Symbol: oc.comp.Symbol, Import: oc.comp.Import,
 				Props: oc.props, Text: inst.FirstText(), Bounds: inst.Bounds,
 				Tokens: tokensFromStyle(inst.Styles), Confidence: oc.score,
+				JSX: renderMatchedJSX(oc.comp, oc.props, inst.FirstText()),
 			})
 		} else {
 			plan.Unmapped = append(plan.Unmapped, PlanUnmapped{
 				NodeID: inst.ID, Name: inst.Name, Type: inst.Type, Bounds: inst.Bounds,
 				Tokens: tokensFromStyle(inst.Styles), Reason: "no catalog match above threshold",
+				JSX: renderUnmappedJSX(gen, inst),
 			})
 		}
 	}
@@ -153,6 +178,40 @@ func collectInstances(frame *figma.Node, depth int) []*figma.Node {
 	}
 	walk(frame, 0)
 	return out
+}
+
+// renderMatchedJSX renders a matched instance in the code library's own
+// format, e.g. `<Button variant="primary">Start</Button>`, using the actual
+// prop values the LLM read off this instance (not the binding's defaults) —
+// so it reflects what's really in Figma, not a generic placeholder.
+func renderMatchedJSX(comp binding.Component, props map[string]string, text string) string {
+	attrs := make([]string, 0, len(props))
+	for name, val := range props {
+		attrs = append(attrs, fmt.Sprintf("%s=%q", name, val))
+	}
+	sort.Strings(attrs)
+
+	attrStr := ""
+	if len(attrs) > 0 {
+		attrStr = " " + strings.Join(attrs, " ")
+	}
+
+	sym := comp.Symbol
+	if text != "" {
+		return fmt.Sprintf("<%s%s>%s</%s>", sym, attrStr, text, sym)
+	}
+	return fmt.Sprintf("<%s%s />", sym, attrStr)
+}
+
+// renderUnmappedJSX renders an unmapped instance the same way `build codegen`
+// would — a div/span tree with inline styles derived from its Figma tokens —
+// so the agent has a starting skeleton instead of bare tokens to compose by
+// eye. The instance's own bounds are reset to the origin first: this is a
+// standalone snippet, not glued to its original canvas position.
+func renderUnmappedJSX(gen *codeGen, inst *figma.Node) string {
+	root := *inst
+	root.Bounds.X, root.Bounds.Y = 0, 0
+	return gen.frame(&root, 0, false, root.Bounds)
 }
 
 // instKey identifies "the same" instance for dedupe: name + rounded size.

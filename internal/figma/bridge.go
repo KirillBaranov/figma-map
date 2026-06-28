@@ -111,7 +111,16 @@ func (b *Bridge) Files(ctx context.Context) ([]File, error) {
 
 // Document implements Source.
 func (b *Bridge) Document(ctx context.Context, fileKey string) (*Node, error) {
-	data, err := b.rpc(ctx, rpcRequest{Tool: "get_document", FileKey: fileKey})
+	return b.DocumentWithDepth(ctx, fileKey, 0)
+}
+
+// DocumentWithDepth implements Source.
+func (b *Bridge) DocumentWithDepth(ctx context.Context, fileKey string, depth int) (*Node, error) {
+	req := rpcRequest{Tool: "get_document", FileKey: fileKey}
+	if depth > 0 {
+		req.Params = map[string]any{"depth": depth}
+	}
+	data, err := b.rpc(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -126,16 +135,33 @@ func (b *Bridge) Document(ctx context.Context, fileKey string) (*Node, error) {
 // single object or a one-element array depending on version, so both are
 // accepted.
 func (b *Bridge) Node(ctx context.Context, fileKey, id string) (*Node, error) {
-	data, err := b.rpc(ctx, rpcRequest{Tool: "get_node", NodeIDs: []string{id}, FileKey: fileKey})
+	return b.NodeWithDepth(ctx, fileKey, id, 0)
+}
+
+// NodeWithDepth implements Source.
+func (b *Bridge) NodeWithDepth(ctx context.Context, fileKey, id string, depth int) (*Node, error) {
+	req := rpcRequest{Tool: "get_node", NodeIDs: []string{id}, FileKey: fileKey}
+	if depth > 0 {
+		req.Params = map[string]any{"depth": depth}
+	}
+	data, err := b.rpc(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	return decodeSingleNode(data)
 }
 
-// Selection implements Source.
+// Selection implements Source. Fetched at depth 1: service.SelectionNode
+// only surfaces the selected node's own fields (id/name/type/text/bounds/
+// variantModes/componentProps), never its descendants, so there's no reason
+// to pay for fully serializing — styles, bound variables, dev-resources —
+// the rest of a potentially huge selected subtree.
 func (b *Bridge) Selection(ctx context.Context, fileKey string) ([]Node, error) {
-	data, err := b.rpc(ctx, rpcRequest{Tool: "get_selection", FileKey: fileKey})
+	data, err := b.rpc(ctx, rpcRequest{
+		Tool:    "get_selection",
+		FileKey: fileKey,
+		Params:  map[string]any{"depth": 1},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +256,62 @@ func (b *Bridge) VariableDefs(ctx context.Context, fileKey string) (VariableDefs
 		return VariableDefs{}, fmt.Errorf("decode variable defs: %w", err)
 	}
 	return defs, nil
+}
+
+// FindNodes implements Source.
+func (b *Bridge) FindNodes(ctx context.Context, fileKey string, opts FindNodesOptions) ([]FindMatch, error) {
+	params := map[string]any{}
+	if opts.Query != "" {
+		params["query"] = opts.Query
+	}
+	if opts.TextQuery != "" {
+		params["textQuery"] = opts.TextQuery
+	}
+	if opts.NodeType != "" {
+		params["nodeType"] = opts.NodeType
+	}
+	if opts.Mode != "" {
+		params["mode"] = opts.Mode
+	}
+	if opts.WithinNodeID != "" {
+		params["withinNodeId"] = opts.WithinNodeID
+	}
+	if opts.MaxDepth > 0 {
+		params["maxDepth"] = opts.MaxDepth
+	}
+	if opts.MaxResults > 0 {
+		params["maxResults"] = opts.MaxResults
+	}
+
+	data, err := b.rpc(ctx, rpcRequest{Tool: "find_nodes", FileKey: fileKey, Params: params})
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Matches []FindMatch `json:"matches"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode find_nodes: %w", err)
+	}
+	return resp.Matches, nil
+}
+
+// MainComponentName implements Source.
+func (b *Bridge) MainComponentName(ctx context.Context, fileKey, id string) (string, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_main_component_name", NodeIDs: []string{id}, FileKey: fileKey})
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Name *string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", fmt.Errorf("decode get_main_component_name: %w", err)
+	}
+	if resp.Name == nil {
+		return "", nil
+	}
+	return *resp.Name, nil
 }
 
 // decodeSingleNode handles both the object and one-element-array shapes the

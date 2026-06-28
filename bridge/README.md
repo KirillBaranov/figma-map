@@ -69,6 +69,7 @@ If you want to know more about how it works, read the [How it works](#how-it-wor
 | `get_document` | Get the current Figma page document tree |
 | `get_selection` | Get the currently selected nodes in Figma |
 | `get_node` | Get a specific Figma node by ID (colon format, e.g. `4029:12345`) |
+| `find_nodes` | Search the node tree by name/text/type/mode, filtering inside the plugin so non-matching nodes never pay for style/variable resolution |
 | `get_styles` | Get all local paint, text, effect, and grid styles |
 | `get_metadata` | Get file name, pages, and current page info |
 | `get_design_context` | Get a depth-limited tree optimized for understanding design context |

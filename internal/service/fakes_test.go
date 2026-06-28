@@ -19,12 +19,15 @@ import (
 
 // fakeSource is an in-memory figma.Source for offline orchestration tests.
 type fakeSource struct {
-	files        []figma.File
-	doc          *figma.Node
-	nodes        map[string]*figma.Node
-	png          []byte
-	metadata     figma.Metadata
-	variableDefs figma.VariableDefs
+	files             []figma.File
+	doc               *figma.Node
+	nodes             map[string]*figma.Node
+	png               []byte
+	metadata          figma.Metadata
+	variableDefs      figma.VariableDefs
+	findMatches       []figma.FindMatch
+	mainComponentName map[string]string
+	screenshotCalls   int
 }
 
 func (f *fakeSource) Ping(context.Context) error                  { return nil }
@@ -35,14 +38,27 @@ func (f *fakeSource) Document(context.Context, string) (*figma.Node, error) {
 	}
 	return f.doc, nil
 }
+func (f *fakeSource) DocumentWithDepth(ctx context.Context, fileKey string, _ int) (*figma.Node, error) {
+	return f.Document(ctx, fileKey)
+}
 func (f *fakeSource) Node(_ context.Context, _ string, id string) (*figma.Node, error) {
 	if n, ok := f.nodes[id]; ok {
 		return n, nil
 	}
 	return nil, fmt.Errorf("no node %s", id)
 }
+func (f *fakeSource) NodeWithDepth(ctx context.Context, fileKey, id string, _ int) (*figma.Node, error) {
+	return f.Node(ctx, fileKey, id)
+}
+func (f *fakeSource) FindNodes(context.Context, string, figma.FindNodesOptions) ([]figma.FindMatch, error) {
+	return f.findMatches, nil
+}
+func (f *fakeSource) MainComponentName(_ context.Context, _ string, id string) (string, error) {
+	return f.mainComponentName[id], nil
+}
 func (f *fakeSource) Selection(context.Context, string) ([]figma.Node, error) { return nil, nil }
 func (f *fakeSource) Screenshot(context.Context, string, string, figma.ScreenshotOpts) ([]byte, error) {
+	f.screenshotCalls++
 	return f.png, nil
 }
 func (f *fakeSource) Metadata(context.Context, string) (figma.Metadata, error) {

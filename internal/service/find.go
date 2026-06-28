@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"strings"
 
 	"github.com/kirillbaranov/figma-map/internal/figma"
 )
@@ -45,11 +44,17 @@ type FindOptions struct {
 	// WithinNodeID restricts the search to a specific node subtree.
 	// Empty means search the entire document.
 	WithinNodeID string
+	// Depth caps how deep the WithinNodeID subtree is searched (0 =
+	// unlimited). Has no effect on a whole-document search.
+	Depth int
 	// MaxResults caps the output. 0 = default 50.
 	MaxResults int
 }
 
-// Find searches the full Figma document tree for nodes matching opts.
+// Find searches the Figma document tree for nodes matching opts. Matching
+// happens inside the Figma plugin sandbox (see figma.Source.FindNodes) — the
+// only way to search a whole document without paying full style/variable
+// serialization for every node, which is what made `find` time out before.
 func (s *Service) Find(ctx context.Context, fileKey string, opts FindOptions) (FindResults, error) {
 	if opts.MaxResults <= 0 {
 		opts.MaxResults = 50
@@ -60,84 +65,31 @@ func (s *Service) Find(ctx context.Context, fileKey string, opts FindOptions) (F
 		return FindResults{}, err
 	}
 
-	var root *figma.Node
-	if opts.WithinNodeID != "" {
-		root, err = s.src.Node(ctx, key, opts.WithinNodeID)
-	} else {
-		root, err = s.src.Document(ctx, key)
-	}
+	matches, err := s.src.FindNodes(ctx, key, figma.FindNodesOptions{
+		Query:        opts.Query,
+		TextQuery:    opts.TextQuery,
+		NodeType:     opts.NodeType,
+		Mode:         opts.Mode,
+		WithinNodeID: opts.WithinNodeID,
+		MaxDepth:     opts.Depth,
+		MaxResults:   opts.MaxResults,
+	})
 	if err != nil {
 		return FindResults{}, err
 	}
 
-	var results []FindResult
-	walkFind(root, "", opts, &results)
+	results := make([]FindResult, len(matches))
+	for i, m := range matches {
+		results[i] = FindResult{
+			ID:             m.ID,
+			Name:           m.Name,
+			Type:           m.Type,
+			Path:           m.Path,
+			Text:           m.Characters,
+			VariantModes:   m.VariantModes,
+			ComponentProps: m.ComponentProps,
+			DevStatus:      m.DevStatus,
+		}
+	}
 	return FindResults{Nodes: results}, nil
-}
-
-func walkFind(n *figma.Node, parentPath string, opts FindOptions, out *[]FindResult) {
-	if len(*out) >= opts.MaxResults {
-		return
-	}
-
-	path := parentPath
-	if n.Name != "" {
-		if path == "" {
-			path = n.Name
-		} else {
-			path = parentPath + " › " + n.Name
-		}
-	}
-
-	// Skip the root page node itself — only match its descendants.
-	if n.Type != "CANVAS" && n.Type != "DOCUMENT" {
-		if matchesFind(n, opts) {
-			*out = append(*out, FindResult{
-				ID:             n.ID,
-				Name:           n.Name,
-				Type:           n.Type,
-				Path:           parentPath,
-				Text:           n.Characters,
-				VariantModes:   n.VariantModes,
-				ComponentProps: n.ComponentProps,
-				DevStatus:      n.DevStatus,
-			})
-		}
-	}
-
-	for i := range n.Children {
-		if len(*out) >= opts.MaxResults {
-			return
-		}
-		walkFind(&n.Children[i], path, opts, out)
-	}
-}
-
-func matchesFind(n *figma.Node, opts FindOptions) bool {
-	if opts.Query != "" && !containsCI(n.Name, opts.Query) {
-		return false
-	}
-	if opts.NodeType != "" && !strings.EqualFold(n.Type, opts.NodeType) {
-		return false
-	}
-	if opts.TextQuery != "" && !containsCI(n.Characters, opts.TextQuery) {
-		return false
-	}
-	if opts.Mode != "" {
-		found := false
-		for _, v := range n.VariantModes {
-			if containsCI(v, opts.Mode) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-func containsCI(s, sub string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }

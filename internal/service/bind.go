@@ -43,7 +43,10 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 		return BindResult{}, err
 	}
 
-	doc, err := s.src.Document(ctx, key)
+	// Only TopLevelFrames() (direct FRAME children of the page) is used below
+	// — depth 1 avoids fully styling/resolving every section's whole subtree
+	// just to discard it.
+	doc, err := s.src.DocumentWithDepth(ctx, key, 1)
 	if err != nil {
 		return BindResult{}, err
 	}
@@ -54,6 +57,18 @@ func (s *Service) Bind(ctx context.Context, fileKey, catalogDir, out string) (Bi
 	matched := map[string]matchedComponent{}
 
 	for _, section := range sections {
+		// Tier 1: an exact, unambiguous name match against the catalog is
+		// deterministic and free — skip the screenshot capture and vision
+		// call entirely when the section's own name already settles it.
+		if item, ok := matcher.MatchByName(section.Name, reps); ok {
+			comp := item.Story.Component
+			p.emit(fmt.Sprintf("  ✓ %s → %s (name match)", section.Name, comp))
+			if cur, ok := matched[comp]; !ok || 1.0 > cur.score {
+				matched[comp] = matchedComponent{story: item.Story, figmaNode: section.ID, score: 1.0, confidence: "high"}
+			}
+			continue
+		}
+
 		png, err := s.src.Screenshot(ctx, key, section.ID, figma.ScreenshotOpts{Scale: 2})
 		if err != nil {
 			p.emit(fmt.Sprintf("  ! %s: screenshot failed: %v", section.Name, err))
