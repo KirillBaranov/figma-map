@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/kirillbaranov/figma-map/internal/binding"
 	"github.com/kirillbaranov/figma-map/internal/figma"
 )
 
@@ -48,6 +49,42 @@ func TestLayoutOf(t *testing.T) {
 	l := layoutOf(st)
 	if l == nil || l.Direction != "row" || l.Gap == nil || *l.Gap != 12 || l.Padding == nil {
 		t.Errorf("layoutOf = %+v", l)
+	}
+}
+
+func TestRenderMatchedJSX(t *testing.T) {
+	comp := binding.Component{Symbol: "Button", Import: "../components/ui/button"}
+
+	got := renderMatchedJSX(comp, map[string]string{"variant": "primary"}, "Start")
+	want := `<Button variant="primary">Start</Button>`
+	if got != want {
+		t.Errorf("with text: got %q, want %q", got, want)
+	}
+
+	got = renderMatchedJSX(comp, nil, "")
+	want = `<Button />`
+	if got != want {
+		t.Errorf("no props/text: got %q, want %q", got, want)
+	}
+}
+
+func TestRenderUnmappedJSX(t *testing.T) {
+	gen := &codeGen{}
+	inst := &figma.Node{
+		ID: "1:1", Type: "INSTANCE", Name: "Chip",
+		Bounds: figma.Bounds{X: 240, Y: 80, Width: 64, Height: 24},
+		Styles: &figma.Style{Fills: figma.MaybePaints{Paints: []figma.Paint{{Type: "SOLID", Color: "#e5e7eb"}}}},
+	}
+	got := renderUnmappedJSX(gen, inst)
+	if got == "" {
+		t.Fatal("expected non-empty JSX skeleton")
+	}
+	if got != gen.frame(&figma.Node{
+		ID: "1:1", Type: "INSTANCE", Name: "Chip",
+		Bounds: figma.Bounds{X: 0, Y: 0, Width: 64, Height: 24},
+		Styles: &figma.Style{Fills: figma.MaybePaints{Paints: []figma.Paint{{Type: "SOLID", Color: "#e5e7eb"}}}},
+	}, 0, false, figma.Bounds{Width: 64, Height: 24}) {
+		t.Errorf("expected root bounds reset to origin, got %q", got)
 	}
 }
 
