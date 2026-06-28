@@ -249,10 +249,15 @@ func (g *codeGen) styleAttr(p *styleProps) string {
 func (g *codeGen) component(n *figma.Node, comp binding.Component, depth int) string {
 	g.addImport(comp.Symbol, comp.Import)
 
-	// Default props from binding — agent will refine.
+	// Prefer this instance's actual Figma componentProps (ground truth —
+	// see resolvePropsFromFigma) over the binding's bare default; only props
+	// that don't resolve from Figma fall back to their default placeholder.
+	resolved, _ := resolvePropsFromFigma(n.ComponentProps, comp.Props)
 	var attrs []string
 	for name, prop := range comp.Props {
-		if def := prop.Default(); def != "" {
+		if v, ok := resolved[name]; ok {
+			attrs = append(attrs, fmt.Sprintf("%s=%q", name, v))
+		} else if def := prop.Default(); def != "" {
 			attrs = append(attrs, fmt.Sprintf("%s=%q", name, def))
 		}
 	}
@@ -460,12 +465,12 @@ func addConstrainedOffsets(p *styleProps, s *figma.Style, bounds, parentBounds f
 	}
 	if horiz == "MAX" && parentBounds.Width > 0 {
 		p.add("right", px(parentBounds.Width-(bounds.X+bounds.Width)))
-	} else if bounds.X != 0 {
+	} else {
 		p.add("left", px(bounds.X))
 	}
 	if vert == "MAX" && parentBounds.Height > 0 {
 		p.add("bottom", px(parentBounds.Height-(bounds.Y+bounds.Height)))
-	} else if bounds.Y != 0 {
+	} else {
 		p.add("top", px(bounds.Y))
 	}
 }
@@ -515,6 +520,9 @@ func buildTextStyle(s *figma.Style, bounds figma.Bounds, absolute bool, parentBo
 	if absolute {
 		p.add("position", q("absolute"))
 		addConstrainedOffsets(p, s, bounds, parentBounds)
+		if bounds.Width > 0 {
+			p.add("width", px(bounds.Width))
+		}
 	}
 	if s == nil {
 		return p

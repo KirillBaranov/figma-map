@@ -42,6 +42,17 @@ type Component struct {
 type Prop struct {
 	// Values are the allowed values; index 0 is the default.
 	Values []string `yaml:"values"`
+	// FigmaProperty is the Figma componentProperty key this prop reads its
+	// value from (e.g. "Style" for a code prop named "variant"). Optional —
+	// omit when the Figma property is already named the same as this prop
+	// (case/punctuation-insensitive, e.g. both "size"/"Size").
+	FigmaProperty string `yaml:"figmaProperty,omitempty"`
+	// ValueMap maps a Figma componentProperty value to its code value (e.g.
+	// {"Primary": "primary"}), for when they don't already align after
+	// normalization (e.g. Figma "M" vs code "md"). Optional — omit when
+	// every value already aligns; a Figma value with no entry here still
+	// falls back to plain normalized matching.
+	ValueMap map[string]string `yaml:"valueMap,omitempty"`
 }
 
 // Load reads a binding document from path.
