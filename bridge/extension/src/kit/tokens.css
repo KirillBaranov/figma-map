@@ -216,10 +216,13 @@
   display: inline-flex;
 }
 
+/* Position (left/top) is set inline by kit/Tooltip.tsx via
+   @floating-ui/dom's computePosition — flip()/shift() keep it inside the
+   viewport near corners/edges, which fixed left:50%-under-the-trigger CSS
+   can't do without clipping (e.g. the bar's rightmost icon, a thumbnail in
+   the last ribbon slot). Only visuals live here. */
 .fm-tooltip {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
+  position: fixed;
   background: var(--fm-bg);
   color: var(--fm-text);
   border: 1px solid var(--fm-border);
@@ -231,22 +234,10 @@
   pointer-events: none;
   opacity: 0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  transition:
-    opacity 0.1s ease-out,
-    transform 0.1s ease-out;
+  transition: opacity 0.1s ease-out;
   z-index: 2147483647;
 }
 
-.fm-tooltip-top .fm-tooltip {
-  bottom: calc(100% + 6px);
-}
-
-.fm-tooltip-bottom .fm-tooltip {
-  top: calc(100% + 6px);
-}
-
-.fm-tooltip-wrap:hover .fm-tooltip,
-.fm-tooltip-wrap:focus-within .fm-tooltip {
+.fm-tooltip.fm-tooltip-visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
 }

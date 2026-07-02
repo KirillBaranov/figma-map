@@ -8,6 +8,7 @@
     "build": "vite build -c vite.config.popup.ts && vite build -c vite.config.options.ts && vite build -c vite.config.content.ts && vite build -c vite.config.background.ts"
   },
   "dependencies": {
+    "@floating-ui/dom": "^1.7.6",
     "lucide-react": "^1.23.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
