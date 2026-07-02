@@ -389,10 +389,37 @@
   border-color: var(--fm-brand);
 }
 
-.fm-history-pin,
-.fm-history-remove {
+/* The tooltip-wrap span (kit/Tooltip.tsx) is itself position:relative, so
+   the absolute placement lives on *it* (via className), not on the button —
+   otherwise the tooltip wrapper becomes the positioning context instead of
+   .fm-history-thumb-wrap and the button ends up offset/floating. */
+.fm-history-pin-slot,
+.fm-history-remove-slot {
   position: absolute;
   top: -5px;
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+}
+
+.fm-history-pin-slot {
+  left: -5px;
+}
+
+.fm-history-remove-slot {
+  right: -5px;
+}
+
+.fm-history-thumb-wrap:hover .fm-history-pin-slot,
+.fm-history-thumb-wrap:hover .fm-history-remove-slot {
+  opacity: 1;
+}
+
+.fm-history-pin-slot:has(.fm-history-pin-active) {
+  opacity: 1;
+}
+
+.fm-history-pin,
+.fm-history-remove {
   width: 14px;
   height: 14px;
   border: none;
@@ -403,25 +430,9 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.1s ease-out;
-}
-
-.fm-history-pin {
-  left: -5px;
-}
-
-.fm-history-remove {
-  right: -5px;
-}
-
-.fm-history-thumb-wrap:hover .fm-history-pin,
-.fm-history-thumb-wrap:hover .fm-history-remove {
-  opacity: 1;
 }
 
 .fm-history-pin-active {
-  opacity: 1;
   color: var(--fm-brand);
 }
 

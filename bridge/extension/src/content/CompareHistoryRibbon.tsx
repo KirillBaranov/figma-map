@@ -55,7 +55,7 @@ export function CompareHistoryRibbon({ onSelect }: CompareHistoryRibbonProps) {
             alt=""
             onClick={() => onSelect(entry)}
           />
-          <Tooltip label={entry.pinned ? "Unpin" : "Pin"}>
+          <Tooltip label={entry.pinned ? "Unpin" : "Pin"} className="fm-history-pin-slot">
             <button
               type="button"
               className={`fm-history-pin ${entry.pinned ? "fm-history-pin-active" : ""}`}
@@ -65,7 +65,7 @@ export function CompareHistoryRibbon({ onSelect }: CompareHistoryRibbonProps) {
               <PinIcon fill={entry.pinned ? "currentColor" : "none"} />
             </button>
           </Tooltip>
-          <Tooltip label="Remove">
+          <Tooltip label="Remove" className="fm-history-remove-slot">
             <button
               type="button"
               className="fm-history-remove"
