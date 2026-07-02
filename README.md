@@ -267,18 +267,26 @@ internal/
   binding/           figma-map.binding.yaml model (load/save)
   codegen/           binding + props → JSX
   llm/               OpenAI-compatible vision client (configurable base URL)
+bridge/
+  plugin/            sandboxed JS inside Figma — node/style/variable serialization
+  server/            leader/election relay (:1994) — /rpc for CLI/MCP, /issues for the extension
+  extension/         browser extension — flags live-page issues, links them to a Figma node
 ```
 
 Each operation is declared once in `internal/op`; the CLI subcommand and the MCP
 tool are both generated from it, so they cannot drift (enforced by a convergence
 test). The `figma.Source` and `matcher.Matcher` interfaces are extension seams: a
 Figma REST backend (for CI) and an embedding-based retriever (for large
-libraries) can be added without touching callers.
+libraries) can be added without touching callers. Layer boundaries and what
+each is/isn't responsible for are fixed in
+[ADR-0002](docs/adr/ADR-0002-layer-boundaries.md).
 
 ### Request flow
 
 Nothing talks to Figma directly — every read/write goes through the bridge, which
-relays it over a WebSocket to a plugin running inside the open Figma file:
+relays it over a WebSocket to a plugin running inside the open Figma file. The
+bridge also fronts a second, unrelated contract for the browser extension —
+flagging an issue on a live page never touches the RPC/WebSocket path at all:
 
 ```mermaid
 flowchart LR
@@ -287,7 +295,12 @@ flowchart LR
     SVC["internal/service"] -->|HTTP POST /rpc| Bridge
     Bridge["bridge/server\n(:1994 — HTTP + WebSocket)"] <-->|WebSocket| Plugin
     Plugin["bridge/plugin\n(sandboxed JS inside Figma)"] --> Doc[("the open Figma file")]
+    Ext["bridge/extension\n(content script on the live page)"] -->|HTTP /issues| Bridge
 ```
+
+`capture issues` / `capture ack` (CLI/MCP) read that same inbox — a human flags
+a mismatch in the browser, the agent picks it up as structured ground truth
+(screenshot, bounds, linked Figma node id), never a raw pixel guess.
 
 The bridge's per-request timeout is 30s — fine for a single node, not for fully
 resolving styles/variables across a whole document. So the plugin offers two
