@@ -17,6 +17,7 @@ let selecting = false;
 let hovered: HTMLElement | null = null;
 let revertCursor: (() => void) | null = null;
 let highlightEl: HTMLDivElement | null = null;
+let labelEl: HTMLDivElement | null = null;
 
 function mount(): void {
   const host = document.createElement("div");
@@ -31,11 +32,22 @@ function mount(): void {
   highlightEl.className = "fm-highlight";
   shadow.appendChild(highlightEl);
 
+  labelEl = document.createElement("div");
+  labelEl.className = "fm-highlight-label";
+  shadow.appendChild(labelEl);
+
   const mountPoint = document.createElement("div");
   shadow.appendChild(mountPoint);
   createRoot(mountPoint).render(
     <App ref={appRef} onToggleSelect={toggleSelectMode} onStopSelect={stopSelectMode} onOpenSettings={openSettings} />
   );
+}
+
+// Tag + id/class selector + size — enough to tell hovered elements apart
+// without guessing, same reasoning as the confirm panel showing the
+// selector before you commit to sending it.
+function describeElement(el: HTMLElement, rect: DOMRect): string {
+  return `${cssSelector(el)}  ${Math.round(rect.width)}×${Math.round(rect.height)}`;
 }
 
 function positionHighlight(el: HTMLElement): void {
@@ -46,10 +58,20 @@ function positionHighlight(el: HTMLElement): void {
   highlightEl.style.width = `${rect.width}px`;
   highlightEl.style.height = `${rect.height}px`;
   highlightEl.classList.add("fm-highlight-visible");
+
+  if (labelEl) {
+    labelEl.textContent = describeElement(el, rect);
+    const labelHeight = 22;
+    const above = rect.top - labelHeight - 4;
+    labelEl.style.left = `${Math.max(4, rect.left)}px`;
+    labelEl.style.top = `${above >= 0 ? above : rect.bottom + 4}px`;
+    labelEl.classList.add("fm-highlight-label-visible");
+  }
 }
 
 function hideHighlight(): void {
   highlightEl?.classList.remove("fm-highlight-visible");
+  labelEl?.classList.remove("fm-highlight-label-visible");
 }
 
 function clearHover(): void {
