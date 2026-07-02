@@ -509,6 +509,16 @@ export const toolInputSchemas = {
     nodeId: figmaNodeId.describe(
       "The node ID to fetch. Accepts top-level IDs like '4029:12345' and instance-child IDs like 'I12740:17806;12740:17793'."
     ),
+    depth: z
+      .number()
+      .optional()
+      .describe("How many levels deep to traverse the node's tree (default: unlimited)."),
+    lean: z
+      .boolean()
+      .optional()
+      .describe(
+        "Skip styles/variables/dev-resources — only id/name/type/bounds/children. For structure-only consumers like hit-testing."
+      ),
     fileKey: fileKeyField,
   }),
 
