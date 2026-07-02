@@ -1,0 +1,30 @@
+body {
+  width: 240px;
+  background: var(--fm-bg);
+  color: var(--fm-text);
+}
+
+.fm-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.fm-popup h1 {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fm-popup-meta {
+  font-size: 11px;
+  color: var(--fm-text-secondary);
+}
+
+.fm-popup-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--fm-border);
+  padding-top: 8px;
+}

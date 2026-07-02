@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "figma-map Capture",
+  "version": "0.1.0",
+  "description": "Select a region of a live page and hand it to figma-map's bridge as a flagged issue for an AI coding agent to pick up.",
+  "permissions": ["activeTab", "scripting", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "action": {
+    "default_popup": "dist/popup/index.html"
+  },
+  "options_page": "dist/options/index.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+body {
+  background: radial-gradient(circle at 50% 0%, #26263a 0%, var(--fm-bg) 60%);
+  color: var(--fm-text);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fm-options {
+  width: 100%;
+  max-width: 460px;
+  margin: 48px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 0 20px;
+}
+
+.fm-options-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fm-options-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--fm-brand);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fm-options-brand h1 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fm-options-subtitle {
+  font-size: 12px;
+  color: var(--fm-text-secondary);
+  margin-top: 2px;
+}
+
+.fm-options-panel {
+  padding: 20px;
+  gap: 18px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.fm-options-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--fm-border);
+}
+
+.fm-options-saved {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fm-success);
+}

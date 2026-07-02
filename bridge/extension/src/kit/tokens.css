@@ -1,0 +1,246 @@
+/* Shared design tokens for the extension's three surfaces (popup, options,
+   in-page overlay). Mirrors the Figma plugin's UI language (bridge/plugin/src/ui/index.css)
+   so the whole "figma-map" family looks like one product. */
+
+:root,
+:host {
+  --fm-bg: #1e1e1e;
+  --fm-bg-secondary: #2a2a2a;
+  --fm-bg-hover: rgba(255, 255, 255, 0.08);
+  --fm-bg-pressed: rgba(255, 255, 255, 0.12);
+  --fm-border: rgba(255, 255, 255, 0.1);
+
+  --fm-text: #ffffff;
+  --fm-text-secondary: #b3b3b3;
+  --fm-text-tertiary: #8c8c8c;
+  --fm-text-disabled: #6b6b6b;
+
+  --fm-brand: #6366f1;
+  --fm-brand-hover: #4f52d6;
+  --fm-success: #2bd47f;
+  --fm-success-bg: rgba(27, 196, 125, 0.14);
+  --fm-danger: #f24822;
+  --fm-danger-hover: #d63d1c;
+  --fm-danger-bg: rgba(242, 72, 34, 0.14);
+
+  --fm-radius-sm: 4px;
+  --fm-radius-md: 6px;
+  --fm-radius-lg: 8px;
+
+  --fm-font: "Inter", system-ui, -apple-system, sans-serif;
+  --fm-font-mono: "SF Mono", "Consolas", monospace;
+}
+
+.fm-reset,
+.fm-reset * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--fm-font);
+}
+
+.fm-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--fm-bg-secondary);
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius-md);
+  overflow: hidden;
+}
+
+.fm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fm-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fm-text-secondary);
+}
+
+.fm-field p {
+  font-size: 10.5px;
+  color: var(--fm-text-tertiary);
+  line-height: 1.4;
+}
+
+.fm-input,
+.fm-textarea {
+  width: 100%;
+  background: var(--fm-bg);
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius-sm);
+  color: var(--fm-text);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.fm-input:focus,
+.fm-textarea:focus {
+  outline: 2px solid var(--fm-brand);
+  outline-offset: -1px;
+}
+
+.fm-textarea {
+  resize: vertical;
+  min-height: 52px;
+}
+
+.fm-button {
+  border: none;
+  border-radius: var(--fm-radius-sm);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.fm-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.fm-button-primary {
+  background: var(--fm-brand);
+  color: #ffffff;
+}
+
+.fm-button-primary:not(:disabled):hover {
+  background: var(--fm-brand-hover);
+}
+
+.fm-button-secondary {
+  background: transparent;
+  color: var(--fm-text);
+  border: 1px solid var(--fm-border);
+}
+
+.fm-button-secondary:not(:disabled):hover {
+  background: var(--fm-bg-hover);
+}
+
+.fm-button-ghost {
+  background: transparent;
+  color: var(--fm-brand);
+  padding: 0;
+  font-size: 11px;
+}
+
+.fm-button-ghost:not(:disabled):hover {
+  text-decoration: underline;
+}
+
+.fm-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--fm-radius-md);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fm-status-connected {
+  background: var(--fm-success-bg);
+  color: var(--fm-success);
+}
+
+.fm-status-disconnected {
+  background: var(--fm-danger-bg);
+  color: var(--fm-danger);
+}
+
+.fm-status-pending {
+  background: var(--fm-bg);
+  color: var(--fm-text-secondary);
+}
+
+.fm-status .fm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fm-status-connected .fm-dot {
+  background: var(--fm-success);
+}
+
+.fm-status-disconnected .fm-dot {
+  background: var(--fm-danger);
+}
+
+.fm-status-pending .fm-dot {
+  background: var(--fm-text-tertiary);
+}
+
+.fm-range {
+  width: 100%;
+  accent-color: var(--fm-brand);
+  height: 4px;
+}
+
+.fm-range-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fm-text-secondary);
+}
+
+.fm-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  background: var(--fm-bg);
+  color: var(--fm-text);
+  border: 1px solid var(--fm-border);
+  padding: 8px 14px;
+  border-radius: var(--fm-radius-md);
+  font: 12px var(--fm-font);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.fm-tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.fm-tooltip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--fm-bg);
+  color: var(--fm-text);
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius-sm);
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition:
+    opacity 0.1s ease-out,
+    transform 0.1s ease-out;
+  z-index: 2147483647;
+}
+
+.fm-tooltip-top .fm-tooltip {
+  bottom: calc(100% + 6px);
+}
+
+.fm-tooltip-bottom .fm-tooltip {
+  top: calc(100% + 6px);
+}
+
+.fm-tooltip-wrap:hover .fm-tooltip,
+.fm-tooltip-wrap:focus-within .fm-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}

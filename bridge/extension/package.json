@@ -1,0 +1,25 @@
+{
+  "name": "figma-map-capture-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"vite build --watch -c vite.config.popup.ts\" \"vite build --watch -c vite.config.options.ts\" \"vite build --watch -c vite.config.content.ts\" \"vite build --watch -c vite.config.background.ts\"",
+    "build": "vite build -c vite.config.popup.ts && vite build -c vite.config.options.ts && vite build -c vite.config.content.ts && vite build -c vite.config.background.ts"
+  },
+  "dependencies": {
+    "lucide-react": "^1.23.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "@types/react": "^18.3.4",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
