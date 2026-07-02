@@ -2,11 +2,15 @@ package op
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/kirillbaranov/figma-map/internal/render"
 	"github.com/kirillbaranov/figma-map/internal/service"
 )
 
@@ -41,6 +45,9 @@ func All() []Registrar {
 		codegenOp,
 		reconcileOp,
 		pixelDiffOp,
+		pixelDiffImagesOp,
+		captureIssuesOp,
+		captureAckOp,
 	}
 }
 
@@ -632,6 +639,155 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 			s += fmt.Sprintf("\n  diff image → %s", r.DiffOut)
 		}
 		return s
+	},
+}
+
+// --- pixeldiff-images ---
+
+type pixelDiffImagesIn struct {
+	Image1    string  `json:"image1"    jsonschema:"first image: a local file path, a data:image/...;base64,... URI, or a bare base64 PNG string" cli:"arg"`
+	Image2    string  `json:"image2"    jsonschema:"second image: a local file path, a data:image/...;base64,... URI, or a bare base64 PNG string" cli:"arg"`
+	Threshold float64 `json:"threshold" jsonschema:"max diff% before match=false (default 5)" default:"5"`
+	ColorTol  int     `json:"colorTol"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
+	DiffOut   string  `json:"diffOut"   jsonschema:"path to write annotated diff PNG (optional)"`
+	GridSize  int     `json:"gridSize"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
+}
+
+var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
+	Group:   "verify",
+	Verb:    "pixeldiff-images",
+	Summary: "Pixel-level comparison between two already-captured images, no Figma or browser fetch",
+	Long: "pixeldiff-images compares two raw images directly, with no Figma node lookup and no " +
+		"browser render — for when both sides were already captured elsewhere (e.g. a browser " +
+		"extension grabbing a live-page crop) and there's no URL or node id to re-fetch from. " +
+		"Each image argument may be a local file path, a data:image/...;base64,... URI, or a " +
+		"bare base64 PNG string. Returns the same diffPct/match/Regions shape as `verify pixeldiff`.",
+	Run: func(ctx context.Context, s *service.Service, in pixelDiffImagesIn) (service.PixelDiffResult, error) {
+		img1, err := loadImageInput(in.Image1)
+		if err != nil {
+			return service.PixelDiffResult{}, fmt.Errorf("image1: %w", err)
+		}
+		img2, err := loadImageInput(in.Image2)
+		if err != nil {
+			return service.PixelDiffResult{}, fmt.Errorf("image2: %w", err)
+		}
+
+		threshold := in.Threshold
+		if threshold <= 0 {
+			threshold = 5
+		}
+		colorTol := uint8(in.ColorTol)
+		if in.ColorTol == 0 {
+			colorTol = 10
+		}
+		gridSize := in.GridSize
+		if gridSize == 0 {
+			gridSize = 4
+		} else if gridSize < 0 {
+			gridSize = 0
+		}
+
+		diff, err := render.PixelDiff(img1, img2, colorTol, in.DiffOut != "", gridSize)
+		if err != nil {
+			return service.PixelDiffResult{}, fmt.Errorf("pixel diff: %w", err)
+		}
+
+		result := service.PixelDiffResult{
+			Match:      diff.DiffPct <= threshold,
+			DiffPct:    math.Round(diff.DiffPct*100) / 100,
+			DiffPixels: diff.DiffPixels,
+			Total:      diff.TotalPixels,
+			Threshold:  threshold,
+		}
+		for _, r := range diff.Regions {
+			result.Regions = append(result.Regions, service.DiffRegion{
+				X: r.X, Y: r.Y, W: r.W, H: r.H,
+				DiffPct: math.Round(r.DiffPct*100) / 100,
+			})
+		}
+
+		if in.DiffOut != "" && len(diff.DiffImage) > 0 {
+			if err := os.WriteFile(in.DiffOut, diff.DiffImage, 0o644); err != nil {
+				return result, fmt.Errorf("write diff image: %w", err)
+			}
+			result.DiffOut = in.DiffOut
+		}
+
+		return result, nil
+	},
+	Render: pixelDiffOp.Render,
+}
+
+// loadImageInput resolves an image argument that may be a local file path, a
+// data:image/...;base64,... URI, or a bare base64-encoded PNG string.
+func loadImageInput(input string) ([]byte, error) {
+	if input == "" {
+		return nil, fmt.Errorf("empty image input")
+	}
+	if strings.HasPrefix(input, "data:") {
+		if idx := strings.Index(input, ";base64,"); idx != -1 {
+			return base64.StdEncoding.DecodeString(input[idx+len(";base64,"):])
+		}
+		return nil, fmt.Errorf("data URI missing ;base64, marker")
+	}
+	if data, err := os.ReadFile(input); err == nil {
+		return data, nil
+	}
+	return base64.StdEncoding.DecodeString(input)
+}
+
+// --- capture issues / ack ---
+
+type captureIssuesIn struct {
+	File string `json:"file" jsonschema:"Figma file key to filter by (default: all)"`
+}
+
+var captureIssuesOp = Op[captureIssuesIn, service.IssuesResult]{
+	Group:   "capture",
+	Verb:    "issues",
+	Summary: "List flagged issues reported by the browser extension",
+	Long: "issues lists regions of a live page a human flagged via the browser extension " +
+		"(screenshot, bounds, CSS selector, optional linked Figma node id, optional note). " +
+		"Pair a linked figmaNodeId with `figma screenshot` and `verify pixeldiff-images` to get " +
+		"a structured diff, then call `capture ack` once handled.",
+	Run: func(ctx context.Context, s *service.Service, in captureIssuesIn) (service.IssuesResult, error) {
+		return s.ListIssues(ctx, in.File)
+	},
+	Render: func(r service.IssuesResult) string {
+		if len(r.Issues) == 0 {
+			return "no flagged issues"
+		}
+		var b strings.Builder
+		for _, iss := range r.Issues {
+			fmt.Fprintf(&b, "%s  %s", iss.ID, iss.Selector)
+			if iss.FigmaNodeID != "" {
+				fmt.Fprintf(&b, "  -> %s", iss.FigmaNodeID)
+			}
+			if iss.RegionNodeID != "" {
+				fmt.Fprintf(&b, "  region:%s", iss.RegionNodeID)
+			}
+			if iss.Note != "" {
+				fmt.Fprintf(&b, "  %q", iss.Note)
+			}
+			b.WriteString("\n")
+		}
+		return strings.TrimRight(b.String(), "\n")
+	},
+}
+
+type captureAckIn struct {
+	ID string `json:"id" jsonschema:"id of the flagged issue to mark handled" cli:"arg"`
+}
+
+var captureAckOp = Op[captureAckIn, service.AckResult]{
+	Group:   "capture",
+	Verb:    "ack",
+	Summary: "Mark a flagged issue as handled, removing it from the inbox",
+	Run: func(ctx context.Context, s *service.Service, in captureAckIn) (service.AckResult, error) {
+		return s.AckIssue(ctx, in.ID)
+	},
+	Render: func(r service.AckResult) string {
+		return fmt.Sprintf("acked %s", r.ID)
 	},
 }
 
