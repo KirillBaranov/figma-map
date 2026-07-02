@@ -37,6 +37,12 @@
   margin: 0;
   padding: 0;
   font-family: var(--fm-font);
+  /* Without this, text color falls through shadow-DOM inheritance to
+     whatever the host page's <html>/<body> sets — invisible-black title
+     bars on a dark host page, readable-by-luck elsewhere. Every element
+     under .fm-reset gets a sane default; specific components (hints,
+     danger text, ghost buttons) already override with their own classes. */
+  color: var(--fm-text);
 }
 
 .fm-panel {
