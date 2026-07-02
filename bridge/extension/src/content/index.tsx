@@ -6,9 +6,11 @@
 // host page's CSS/JS.
 import { createRoot } from "react-dom/client";
 import { createRef } from "react";
-import { App, type AppHandle } from "./App";
+import { type AppHandle } from "./App";
+import { SiteGate } from "./SiteGate";
 import { cssSelector } from "./selector";
 import { sendExtensionMessage } from "../protocol";
+import { getOptions, isHostEnabled } from "../lib/options";
 import kitCss from "../kit/tokens.css?raw";
 import overlayCss from "./overlay.css?raw";
 
@@ -19,7 +21,10 @@ let revertCursor: (() => void) | null = null;
 let highlightEl: HTMLDivElement | null = null;
 let labelEl: HTMLDivElement | null = null;
 
-function mount(): void {
+async function mount(): Promise<void> {
+  const opts = await getOptions();
+  const hostname = location.hostname;
+
   const host = document.createElement("div");
   host.id = "figma-map-host";
   document.documentElement.appendChild(host);
@@ -39,7 +44,14 @@ function mount(): void {
   const mountPoint = document.createElement("div");
   shadow.appendChild(mountPoint);
   createRoot(mountPoint).render(
-    <App ref={appRef} onToggleSelect={toggleSelectMode} onStopSelect={stopSelectMode} onOpenSettings={openSettings} />
+    <SiteGate
+      initialEnabled={isHostEnabled(hostname, opts)}
+      hostname={hostname}
+      appRef={appRef}
+      onToggleSelect={toggleSelectMode}
+      onStopSelect={stopSelectMode}
+      onOpenSettings={openSettings}
+    />
   );
 }
 

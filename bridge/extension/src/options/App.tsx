@@ -3,7 +3,7 @@ import { Button, CrosshairIcon, TextField } from "../kit";
 import { DEFAULT_BRIDGE_URL, getOptions, setOptions, type ExtensionOptions } from "../lib/options";
 
 export function App() {
-  const [values, setValues] = useState<ExtensionOptions>({ bridgeUrl: DEFAULT_BRIDGE_URL });
+  const [values, setValues] = useState<ExtensionOptions>({ bridgeUrl: DEFAULT_BRIDGE_URL, enabledHosts: [] });
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {

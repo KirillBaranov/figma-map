@@ -441,3 +441,31 @@
   background: var(--fm-bg-hover);
   color: var(--fm-text);
 }
+
+/* The Tooltip wrap span is the thing that needs to be fixed bottom-right —
+   see the history-thumb pin/remove fix above for why this can't live on
+   the button itself once it's wrapped in <Tooltip>. */
+.fm-enable-fab-wrap {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483646;
+}
+
+.fm-enable-fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--fm-brand);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.fm-enable-fab:hover {
+  background: var(--fm-brand-hover);
+}

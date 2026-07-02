@@ -1,4 +1,4 @@
-import { Blend, Check, Crosshair, Inbox, Pin, RefreshCw, Settings, X } from "lucide-react";
+import { Blend, Check, Crosshair, Inbox, Pin, Plus, RefreshCw, Settings, X } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 
 // Thin re-exports so call sites (Bar, Window, IssuesWindow, ...) depend on
@@ -35,4 +35,8 @@ export function RefreshIcon(props: LucideProps) {
 // Pass fill="currentColor" for the pinned (filled) state.
 export function PinIcon(props: LucideProps) {
   return <Pin size={13} {...props} />;
+}
+
+export function PlusIcon(props: LucideProps) {
+  return <Plus size={22} {...props} />;
 }
