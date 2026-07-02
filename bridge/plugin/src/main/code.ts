@@ -52,6 +52,8 @@ type ServerRequestParams = Record<string, unknown> & {
    */
   clip?: boolean;
   depth?: number;
+  /** get_node: skip styles/variables/dev-resources — only id/name/type/bounds/children, for structure-only consumers like hit-testing. */
+  lean?: boolean;
   /** find_nodes: case-insensitive substring match against node name. */
   query?: string;
   /** find_nodes: case-insensitive substring match against TEXT characters. */
@@ -437,10 +439,11 @@ const handleRequest = async (
           typeof request.params?.depth === "number"
             ? request.params.depth
             : undefined;
+        const lean = request.params?.lean === true;
         return {
           type: request.type,
           requestId: request.requestId,
-          data: await serializeNode(node as SceneNode, depth),
+          data: await serializeNode(node as SceneNode, depth, 0, undefined, lean),
         };
       }
       case "find_nodes": {

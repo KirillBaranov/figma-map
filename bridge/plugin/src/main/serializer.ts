@@ -829,25 +829,38 @@ export const serializeNode = async (
   depth = 0,
   // Shared across the whole tree walk (created once at the root call, then
   // threaded through every recursive call) — see VariableCache above for why.
-  cache: VariableCache = createVariableCache()
+  cache: VariableCache = createVariableCache(),
+  // Skips every field a structure-only consumer (e.g. the browser
+  // extension's click-to-node hit-map) never reads — no style/variable
+  // resolution, no dev-resources RPC-shaped calls, no text serialization.
+  // Same base fields (id/name/type/bounds) plus children, at any depth, for
+  // a fraction of the cost of the default "resolve everything" walk.
+  lean = false
 ): Promise<SerializedNode> => {
-  const base: SerializedNode = {
-    id: node.id,
-    name: node.name,
-    type: node.type,
-    bounds: getBounds(node),
-    styles: await serializeStyles(node, cache),
-    componentProps: resolveComponentProps(node),
-    variantModes: await resolveVariantModes(node, cache),
-    gridPosition: resolveGridPosition(node),
-    reactions: resolveReactions(node),
-    devStatus: "devStatus" in node ? node.devStatus?.type : undefined,
-    devResources: await resolveDevResources(node),
-    annotations: resolveAnnotations(node),
-    exportSettings: resolveExportSettings(node),
-  };
+  const base: SerializedNode = lean
+    ? {
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        bounds: getBounds(node),
+      }
+    : {
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        bounds: getBounds(node),
+        styles: await serializeStyles(node, cache),
+        componentProps: resolveComponentProps(node),
+        variantModes: await resolveVariantModes(node, cache),
+        gridPosition: resolveGridPosition(node),
+        reactions: resolveReactions(node),
+        devStatus: "devStatus" in node ? node.devStatus?.type : undefined,
+        devResources: await resolveDevResources(node),
+        annotations: resolveAnnotations(node),
+        exportSettings: resolveExportSettings(node),
+      };
 
-  if (node.type === "TEXT") {
+  if (node.type === "TEXT" && !lean) {
     return serializeText(node, base);
   }
 
@@ -858,7 +871,7 @@ export const serializeNode = async (
     }
     const children = await Promise.all(
       visibleChildren.map((child) =>
-        serializeNode(child, maxDepth, depth + 1, cache)
+        serializeNode(child, maxDepth, depth + 1, cache, lean)
       )
     );
     return { ...base, children };
