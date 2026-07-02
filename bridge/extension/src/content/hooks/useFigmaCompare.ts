@@ -126,16 +126,26 @@ export function useFigmaCompare(state: CompareState, defaultFileKey?: string) {
   }
 
   async function fetchFromFigma() {
-    if (!state.nodeId.trim()) {
+    const nodeId = state.nodeId.trim();
+    if (!nodeId) {
       state.setError("Enter a Figma node id");
       return;
     }
     state.setFetching(true);
     state.setError(null);
     try {
-      const result = await fetchFigmaScreenshot(state.nodeId.trim(), defaultFileKey);
+      // Fetch the subtree alongside the screenshot — same as "Use Figma
+      // selection" — so Alt+click-to-pin-a-region works no matter which of
+      // the three ways (typed id, live selection, history) loaded the node.
+      const [result, subtree] = await Promise.all([
+        fetchFigmaScreenshot(nodeId, defaultFileKey),
+        getFigmaSubtree(nodeId, defaultFileKey)
+      ]);
       state.setFigmaSize({ w: result.width, h: result.height });
-      state.setFetchedNodeId(state.nodeId.trim());
+      state.setFetchedNodeId(nodeId);
+      state.setRootBounds(subtree.bounds);
+      state.setHitTree(subtree);
+      state.setRegion(null);
       loadImage(result.dataUrl);
       pushCompareHistory({
         image: result.dataUrl,
@@ -143,8 +153,8 @@ export function useFigmaCompare(state: CompareState, defaultFileKey?: string) {
         naturalH: result.height,
         figmaW: result.width,
         figmaH: result.height,
-        fetchedNodeId: state.nodeId.trim(),
-        nodeId: state.nodeId.trim(),
+        fetchedNodeId: nodeId,
+        nodeId,
         pos: { x: 0, y: 0 },
         scale: 100,
         opacity: 70,
@@ -266,11 +276,31 @@ export function useFigmaCompare(state: CompareState, defaultFileKey?: string) {
 
   // Reactivates a past session from the history ribbon — mirrors
   // fetchFromFigma's state updates, but doesn't push back into history
-  // (reactivating isn't "loading new", see the module comment above).
+  // (reactivating isn't "loading new", see the module comment above). The
+  // hit-map isn't part of a history entry (only screenshot + metadata are
+  // persisted), so if it was linked to a Figma node, re-fetch the subtree
+  // live — same reasoning as fetchFromFigma, so pin-a-region still works
+  // after reactivating.
   function loadFromHistory(entry: CompareHistoryEntryData) {
     if (entry.figmaW && entry.figmaH) state.setFigmaSize({ w: entry.figmaW, h: entry.figmaH });
-    if (entry.fetchedNodeId) state.setFetchedNodeId(entry.fetchedNodeId);
     state.setNodeId(entry.nodeId);
+    state.setHitTree(null);
+    state.setRootBounds(null);
+    state.setRegion(null);
+    if (entry.fetchedNodeId) {
+      state.setFetchedNodeId(entry.fetchedNodeId);
+      getFigmaSubtree(entry.fetchedNodeId, defaultFileKey)
+        .then((subtree) => {
+          state.setRootBounds(subtree.bounds);
+          state.setHitTree(subtree);
+        })
+        .catch(() => {
+          // Best-effort — the comparison itself still loads fine without a
+          // hit-map, pin-a-region just won't be available for this session.
+        });
+    } else {
+      state.setFetchedNodeId(null);
+    }
     loadImage(entry.image);
   }
 
