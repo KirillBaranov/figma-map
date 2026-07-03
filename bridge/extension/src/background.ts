@@ -1,10 +1,18 @@
 // Background service worker: captures the visible tab, crops to the
 // requested region, and forwards a "flagged issue" to figma-map's bridge.
 // Does no diffing or matching — that stays server-side (ADR-0001).
+import { z } from "zod";
 import { getOptions } from "./lib/options";
-import { pingBridge, countPendingIssues } from "./lib/bridge";
+import { pingBridge, countPendingIssues, API_PREFIX } from "./lib/bridge";
 import { dataUrlToBitmap, cropBitmapToBase64 } from "./lib/image";
 import type { HitNode } from "./lib/hitmap";
+import {
+  RpcRequestSchema,
+  RpcResponseSchema,
+  CompareSessionDataSchema,
+  CompareHistoryEntryDataSchema,
+  FlaggedIssueDataSchema
+} from "./protocol";
 import type {
   AckIssueRequest,
   Bbox,
@@ -75,7 +83,7 @@ function buildIssuePayload(params: {
 }
 
 async function postIssue(issue: IssuePayload, bridgeUrl: string): Promise<void> {
-  const resp = await fetch(bridgeUrl.replace(/\/$/, "") + "/issues", {
+  const resp = await fetch(bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/issues`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(issue)
@@ -149,7 +157,7 @@ async function handleGetStatus(): Promise<{ connected: boolean; pending: number 
   return { connected, pending };
 }
 
-// Dev-only one-shot signal (bridge/server/src/reloadSignal.ts): an agent/CLI
+// Dev-only one-shot signal (backend/src/reloadSignal.ts): an agent/CLI
 // POSTs /extension/reload, and the next time this checks, it consumes the
 // flag and reloads itself — chrome.runtime.reload() needs no special
 // permission (unlike chrome.management, which manages *other* extensions).
@@ -199,25 +207,36 @@ interface FetchedScreenshot {
 
 // Renders a Figma node to a PNG via the bridge's existing get_screenshot RPC
 // (the same call internal/figma/bridge.go makes) — no new Go code needed.
+// Builds the request through RpcRequestSchema (throws on a malformed call
+// site instead of silently sending bad JSON) and validates the response
+// envelope through RpcResponseSchema — a backend that starts returning a
+// differently-shaped body fails loudly here rather than typing through as
+// `any` (ADR-0003 §3).
+async function rpcCall(bridgeUrl: string, req: { tool: string; nodeIds?: string[]; params?: Record<string, unknown>; fileKey?: string }): Promise<unknown> {
+  const parsedReq = RpcRequestSchema.parse(req);
+  const resp = await fetch(bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/rpc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(parsedReq)
+  });
+  const body = RpcResponseSchema.parse(await resp.json());
+  if (!resp.ok || body.error) {
+    throw new Error(body.error || `bridge returned ${resp.status}`);
+  }
+  return body.data;
+}
+
 async function handleFetchScreenshot(nodeId: string, fileKey?: string): Promise<FetchedScreenshot> {
   if (!nodeId.trim()) throw new Error("node id is required");
   const opts = await getOptions();
 
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/rpc", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tool: "get_screenshot",
-      nodeIds: [nodeId],
-      params: { format: "PNG", scale: 1 },
-      fileKey: fileKey || opts.fileKey
-    })
-  });
-  const body = await resp.json();
-  if (!resp.ok || body.error) {
-    throw new Error(body.error || `bridge returned ${resp.status}`);
-  }
-  const exports: ScreenshotExport[] | undefined = body.data?.exports;
+  const data = (await rpcCall(opts.bridgeUrl, {
+    tool: "get_screenshot",
+    nodeIds: [nodeId],
+    params: { format: "PNG", scale: 1 },
+    fileKey: fileKey || opts.fileKey
+  })) as { exports?: ScreenshotExport[] } | undefined;
+  const exports = data?.exports;
   if (!exports?.length) {
     throw new Error(`no screenshot returned for node ${nodeId}`);
   }
@@ -239,20 +258,12 @@ async function handleFetchScreenshot(nodeId: string, fileKey?: string): Promise<
 // /rpc relay handleFetchScreenshot uses — no new Go code needed.
 async function handleGetSelection(fileKey?: string): Promise<HitNode[]> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/rpc", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tool: "get_selection",
-      params: { depth: 0 },
-      fileKey: fileKey || opts.fileKey
-    })
+  const data = await rpcCall(opts.bridgeUrl, {
+    tool: "get_selection",
+    params: { depth: 0 },
+    fileKey: fileKey || opts.fileKey
   });
-  const body = await resp.json();
-  if (!resp.ok || body.error) {
-    throw new Error(body.error || `bridge returned ${resp.status}`);
-  }
-  return body.data ?? [];
+  return (data as HitNode[] | undefined) ?? [];
 }
 
 // Fetches the selected node's full subtree (bounds + children) so the
@@ -261,46 +272,38 @@ async function handleGetSelection(fileKey?: string): Promise<HitNode[]> {
 // so no extra guard is needed here.
 async function handleGetSubtree(nodeId: string, fileKey?: string): Promise<HitNode> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/rpc", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tool: "get_node",
-      nodeIds: [nodeId],
-      // Hit-testing only ever reads id/name/bounds/children — lean skips
-      // the styles/variables/dev-resources resolution get_node normally
-      // does for every node, which is what made this hang on large
-      // selections (a whole page, a big frame).
-      params: { lean: true },
-      fileKey: fileKey || opts.fileKey
-    })
-  });
-  const body = await resp.json();
-  if (!resp.ok || body.error) {
-    throw new Error(body.error || `bridge returned ${resp.status}`);
-  }
-  if (!body.data?.id) {
+  const data = (await rpcCall(opts.bridgeUrl, {
+    tool: "get_node",
+    nodeIds: [nodeId],
+    // Hit-testing only ever reads id/name/bounds/children — lean skips
+    // the styles/variables/dev-resources resolution get_node normally
+    // does for every node, which is what made this hang on large
+    // selections (a whole page, a big frame).
+    params: { lean: true },
+    fileKey: fileKey || opts.fileKey
+  })) as HitNode | undefined;
+  if (!data?.id) {
     throw new Error(`no node returned for ${nodeId}`);
   }
-  return body.data;
+  return data;
 }
 
-// The overlay-compare session lives on the bridge (bridge/server/src/compareSession.ts)
+// The overlay-compare session lives on the bridge (backend/src/compareSession.ts)
 // — single source of truth, not chrome.storage.local — so these three are
 // thin proxies to /compare-session, the same shape as the /issues proxies above.
 async function handleGetCompareSession(): Promise<CompareSessionData | null> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session");
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session`);
   if (!resp.ok) {
     throw new Error(`bridge returned ${resp.status}`);
   }
   const body = await resp.json();
-  return body.data ?? null;
+  return body.data ? CompareSessionDataSchema.parse(body.data) : null;
 }
 
 async function handleSaveCompareSession(session: CompareSessionData): Promise<void> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session", {
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(session)
@@ -313,7 +316,7 @@ async function handleSaveCompareSession(session: CompareSessionData): Promise<vo
 
 async function handleClearCompareSession(): Promise<void> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session", {
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session`, {
     method: "DELETE"
   });
   if (!resp.ok) {
@@ -323,20 +326,20 @@ async function handleClearCompareSession(): Promise<void> {
 
 // Past compare sessions, pushed only when a new reference image loads (not
 // on every drag/opacity tweak — those keep updating /compare-session
-// above). Same store, bridge/server/src/compareSession.ts's history side.
+// above). Same store, backend/src/compareSession.ts's history side.
 async function handleListCompareHistory(): Promise<CompareHistoryEntryData[]> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session/history");
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session/history`);
   if (!resp.ok) {
     throw new Error(`bridge returned ${resp.status}`);
   }
   const body = await resp.json();
-  return body.data ?? [];
+  return z.array(CompareHistoryEntryDataSchema).parse(body.data ?? []);
 }
 
 async function handlePushCompareHistory(session: CompareSessionData): Promise<CompareHistoryEntryData> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session/history", {
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session/history`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(session)
@@ -346,12 +349,12 @@ async function handlePushCompareHistory(session: CompareSessionData): Promise<Co
     throw new Error(`bridge returned ${resp.status}: ${text}`);
   }
   const body = await resp.json();
-  return body.data;
+  return CompareHistoryEntryDataSchema.parse(body.data);
 }
 
 async function handlePinCompareHistory(id: string, pinned: boolean): Promise<CompareHistoryEntryData> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session/history/" + encodeURIComponent(id) + "/pin", {
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session/history/` + encodeURIComponent(id) + "/pin", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pinned })
@@ -361,12 +364,12 @@ async function handlePinCompareHistory(id: string, pinned: boolean): Promise<Com
     throw new Error(`bridge returned ${resp.status}: ${text}`);
   }
   const body = await resp.json();
-  return body.data;
+  return CompareHistoryEntryDataSchema.parse(body.data);
 }
 
 async function handleDeleteCompareHistory(id: string): Promise<void> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/compare-session/history/" + encodeURIComponent(id), {
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/compare-session/history/` + encodeURIComponent(id), {
     method: "DELETE"
   });
   if (!resp.ok) {
@@ -379,18 +382,18 @@ async function handleDeleteCompareHistory(id: string): Promise<void> {
 // (internal/figma/issue.go) — the Issues window is just another consumer.
 async function handleListIssues(fileKey?: string): Promise<FlaggedIssueData[]> {
   const opts = await getOptions();
-  const url = opts.bridgeUrl.replace(/\/$/, "") + "/issues" + (fileKey || opts.fileKey ? `?fileKey=${encodeURIComponent(fileKey || opts.fileKey || "")}` : "");
+  const url = opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/issues` + (fileKey || opts.fileKey ? `?fileKey=${encodeURIComponent(fileKey || opts.fileKey || "")}` : "");
   const resp = await fetch(url);
   if (!resp.ok) {
     throw new Error(`bridge returned ${resp.status}`);
   }
   const body = await resp.json();
-  return body.data ?? [];
+  return z.array(FlaggedIssueDataSchema).parse(body.data ?? []);
 }
 
 async function handleAckIssue(id: string): Promise<void> {
   const opts = await getOptions();
-  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + "/issues/" + encodeURIComponent(id), {
+  const resp = await fetch(opts.bridgeUrl.replace(/\/$/, "") + `${API_PREFIX}/issues/` + encodeURIComponent(id), {
     method: "DELETE"
   });
   if (!resp.ok) {

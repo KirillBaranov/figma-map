@@ -19,7 +19,7 @@ func TestBridge_ListIssues(t *testing.T) {
 	}}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/issues" || r.Method != http.MethodGet {
+		if r.URL.Path != "/api/v1/issues" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		if got := r.URL.Query().Get("fileKey"); got != "file1" {
@@ -43,7 +43,7 @@ func TestBridge_ListIssues(t *testing.T) {
 
 func TestBridge_AckIssue(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/issues/abc" || r.Method != http.MethodDelete {
+		if r.URL.Path != "/api/v1/issues/abc" || r.Method != http.MethodDelete {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)

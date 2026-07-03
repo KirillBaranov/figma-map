@@ -4,7 +4,82 @@
 // background.ts dispatch table and the lib/*.ts typed callers — so the two
 // sides cannot drift, the same reason internal/op.Registry generates the CLI
 // and MCP surface from one declaration on the Go side.
+import { z } from "zod";
 import type { HitNode } from "./lib/hitmap";
+
+// --- backend HTTP wire contract (ADR-0003 §3) ---
+// These mirror backend/src/types.ts's zod schemas field-for-field. Not a
+// cross-package import: backend (Node/tsc) and this extension (browser/vite)
+// are separate npm packages with no workspace wired up between them, so
+// backend/src/types.ts stays the canonical source and this is a second,
+// independently-validated copy — a malformed backend response still fails
+// loudly here via .parse(), it just isn't the literal same schema object.
+export const RpcRequestSchema = z.object({
+  tool: z.string(),
+  nodeIds: z.array(z.string()).optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
+  fileKey: z.string().optional()
+});
+export type RpcRequest = z.infer<typeof RpcRequestSchema>;
+
+export const RpcResponseSchema = z.object({
+  data: z.unknown().optional(),
+  error: z.string().optional()
+});
+export type RpcResponse = z.infer<typeof RpcResponseSchema>;
+
+export const CompareSessionPosSchema = z.object({
+  x: z.number(),
+  y: z.number()
+});
+
+export const CompareSessionDataSchema = z.object({
+  image: z.string(),
+  naturalW: z.number(),
+  naturalH: z.number(),
+  figmaW: z.number().optional(),
+  figmaH: z.number().optional(),
+  fetchedNodeId: z.string().optional(),
+  nodeId: z.string(),
+  pos: CompareSessionPosSchema,
+  scale: z.number(),
+  opacity: z.number(),
+  diffMode: z.boolean(),
+  syncScroll: z.boolean(),
+  panelPos: CompareSessionPosSchema.optional(),
+  updatedAt: z.string().optional()
+});
+export type CompareSessionData = z.infer<typeof CompareSessionDataSchema>;
+
+export const CompareHistoryEntryDataSchema = CompareSessionDataSchema.extend({
+  id: z.string(),
+  createdAt: z.string(),
+  pinned: z.boolean()
+});
+export type CompareHistoryEntryData = z.infer<typeof CompareHistoryEntryDataSchema>;
+
+const BboxSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number()
+});
+
+export const FlaggedIssueDataSchema = z.object({
+  id: z.string(),
+  tabUrl: z.string(),
+  selector: z.string(),
+  figmaNodeId: z.string().optional(),
+  regionNodeId: z.string().optional(),
+  regionBounds: BboxSchema.optional(),
+  fileKey: z.string().optional(),
+  bbox: BboxSchema,
+  screenshotBase64: z.string(),
+  diffPct: z.number().optional(),
+  note: z.string().optional(),
+  createdAt: z.string()
+});
+export type FlaggedIssueData = z.infer<typeof FlaggedIssueDataSchema>;
 
 export interface Bbox {
   x: number;
@@ -99,24 +174,9 @@ export interface MatchZoomResponse {
   zoom?: number;
 }
 
-// The overlay-compare session — single source of truth on the bridge
-// (bridge/server/src/compareSession.ts), not chrome.storage.local. Mirrors
-// bridge's CompareSession type field-for-field.
-export interface CompareSessionData {
-  image: string;
-  naturalW: number;
-  naturalH: number;
-  figmaW?: number;
-  figmaH?: number;
-  fetchedNodeId?: string;
-  nodeId: string;
-  pos: { x: number; y: number };
-  scale: number;
-  opacity: number;
-  diffMode: boolean;
-  syncScroll: boolean;
-  panelPos?: { x: number; y: number };
-}
+// The overlay-compare session — single source of truth on the backend
+// (backend/src/compareSession.ts), not chrome.storage.local. CompareSessionData
+// itself is defined above as a zod schema (ADR-0003 §3).
 
 export interface GetCompareSessionRequest {
   type: "FIGMA_MAP_GET_COMPARE_SESSION";
@@ -144,21 +204,7 @@ export interface ClearCompareSessionResponse {
   error?: string;
 }
 
-// Mirrors bridge/server/src/types.ts's FlaggedIssue field-for-field.
-export interface FlaggedIssueData {
-  id: string;
-  tabUrl: string;
-  selector: string;
-  figmaNodeId?: string;
-  regionNodeId?: string;
-  regionBounds?: Bbox;
-  fileKey?: string;
-  bbox: Bbox;
-  screenshotBase64: string;
-  diffPct?: number;
-  note?: string;
-  createdAt: string;
-}
+// FlaggedIssueData itself is defined above as a zod schema (ADR-0003 §3).
 
 export interface ListIssuesRequest {
   type: "FIGMA_MAP_LIST_ISSUES";
@@ -179,13 +225,7 @@ export interface AckIssueResponse {
   error?: string;
 }
 
-// A past compare session kept for re-activation. Mirrors
-// bridge/server/src/types.ts's CompareHistoryEntry field-for-field.
-export interface CompareHistoryEntryData extends CompareSessionData {
-  id: string;
-  createdAt: string;
-  pinned: boolean;
-}
+// CompareHistoryEntryData itself is defined above as a zod schema (ADR-0003 §3).
 
 export interface ListCompareHistoryRequest {
   type: "FIGMA_MAP_LIST_COMPARE_HISTORY";

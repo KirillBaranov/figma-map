@@ -11,9 +11,14 @@ import (
 	"time"
 )
 
-// Bridge is a Source backed by a running figma-mcp-bridge HTTP RPC server.
-// It speaks the bridge's POST /rpc protocol and maps responses into the domain
-// Node model. No Figma REST API limits apply.
+// apiV1 is the prefix for every versioned data-plane endpoint the backend
+// exposes (ADR-0003 §2). /ping stays unprefixed — it's infrastructure, not
+// the data API.
+const apiV1 = "/api/v1"
+
+// Bridge is a Source backed by a running figma-map backend's HTTP RPC server.
+// It speaks the backend's POST /api/v1/rpc protocol and maps responses into
+// the domain Node model. No Figma REST API limits apply.
 type Bridge struct {
 	baseURL string
 	client  *http.Client
@@ -67,7 +72,7 @@ func (b *Bridge) rpc(ctx context.Context, req rpcRequest) (json.RawMessage, erro
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, b.baseURL+"/rpc", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, b.baseURL+apiV1+"/rpc", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

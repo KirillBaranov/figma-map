@@ -8,7 +8,7 @@ The unpacked Chrome extension can be reloaded from the agent side after a
 rebuild — no manual `chrome://extensions` click needed, except once to
 bootstrap it.
 
-**How it works:** `bridge/server/src/reloadSignal.ts` is a one-shot flag on
+**How it works:** `backend/src/reloadSignal.ts` is a one-shot flag on
 the Leader. `POST /extension/reload` sets it; `GET /extension/reload`
 consumes it (returns `{ reload: true }` once, then `false` until requested
 again). The extension's `background.ts` polls that GET both piggybacked on
@@ -21,8 +21,8 @@ that's a built-in method requiring no special permission (unlike
 
 **Usage after a rebuild:**
 ```bash
-cd bridge/server && npm run build
-# restart the running bridge process so the new server code is live
+cd backend && npm run build
+# restart the running backend process so the new server code is live
 cd bridge/extension && npm run build
 curl -s -X POST http://localhost:1994/extension/reload
 ```
@@ -44,16 +44,18 @@ endpoint (a background `until` loop keyed off elapsed wall-clock time, not
 off the endpoint), then check once — if it already reads `false` and you
 never consumed it yourself, the extension picked it up.
 
-## Restarting the bridge server
+## Restarting the backend
 
 Only one process ever binds `:1994` (whichever `figma-map`/MCP process won
-leader election — see `bridge/server/src/node.ts`). To pick up a
-`bridge/server` code change:
+leader election — see `backend/src/node.ts`). To pick up a
+`backend` code change:
 ```bash
 lsof -nP -iTCP:1994 -sTCP:LISTEN   # find the current PID
 kill <pid>
-node bridge/server/dist/index.js & # respawns as LEADER
+node backend/dist/index.js &       # respawns as LEADER
 ```
-This drops the in-memory issue inbox, compare-session, and compare-history —
-expected, documented in each store's own comment (stateless by design, same
-as the rest of the bridge).
+The issue inbox, compare-session, and compare-history are persisted to
+`~/.figma-map/backend/*.json` (atomic write, load-on-startup) — a restart no
+longer loses them. Only the reload signal (`reloadSignal.ts`) and the live
+plugin WebSocket connections stay ephemeral, since a signal flag and an open
+socket have no meaningful state to persist across a process restart.

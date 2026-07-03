@@ -2,25 +2,39 @@ import http from "node:http";
 import type { Duplex } from "node:stream";
 import { Bridge } from "./bridge.js";
 import { CompareSessionStore } from "./compareSession.js";
-import { IssueStore, type NewFlaggedIssue } from "./issues.js";
+import { IssueStore } from "./issues.js";
 import { ReloadSignal } from "./reloadSignal.js";
 import { validateRpc } from "./schema.js";
 import { executeSaveScreenshots } from "./tools.js";
 import type { ExportFormat } from "./tools.js";
-import type { CompareSession, RPCRequest, RPCResponse } from "./types.js";
+import {
+  CompareSessionSchema,
+  NewFlaggedIssueSchema,
+  RPCRequestSchema,
+  type RPCResponse,
+} from "./types.js";
+import { z } from "zod";
 import { VERSION } from "./version.js";
+
+/**
+ * All versioned data-plane endpoints live under this prefix (ADR-0003 §2).
+ * `/ping` and `/extension/reload` are deliberately left outside it — they're
+ * infrastructure (health check, one-shot dev signal), not the data API.
+ */
+const API = "/api/v1";
 
 /**
  * Leader owns the WebSocket bridge to Figma and exposes HTTP endpoints for followers.
  * Endpoints:
- *   /ws                      — WebSocket upgrade for the Figma plugin
- *   /ping                    — Health check
- *   /rpc                     — JSON RPC for follower tool calls
- *   /issues                  — Inbox for issues flagged by the browser extension
- *   /compare-session         — Single source of truth for the extension's overlay-compare state
- *   /compare-session/history — Past compare sessions (auto + pinned), for re-activation
- *   /extension/reload        — One-shot dev signal: an agent/CLI POSTs, the extension's
- *                              own polling picks it up and calls chrome.runtime.reload()
+ *   /ws                             — WebSocket upgrade for the Figma plugin
+ *   /ping                           — Health check (unversioned, infrastructure)
+ *   /api/v1/rpc                     — JSON RPC for follower tool calls
+ *   /api/v1/issues                  — Inbox for issues flagged by the browser extension
+ *   /api/v1/compare-session         — Single source of truth for the extension's overlay-compare state
+ *   /api/v1/compare-session/history — Past compare sessions (auto + pinned), for re-activation
+ *   /extension/reload               — One-shot dev signal (unversioned, infrastructure): an
+ *                                     agent/CLI POSTs, the extension's own polling picks it up
+ *                                     and calls chrome.runtime.reload()
  */
 export class Leader {
   private bridge: Bridge;
@@ -49,53 +63,53 @@ export class Leader {
           return;
         }
 
-        if (req.url === "/rpc" && req.method === "POST") {
+        if (req.url === `${API}/rpc` && req.method === "POST") {
           this.handleRPC(req, res);
           return;
         }
 
-        if (req.url === "/issues" && req.method === "POST") {
+        if (req.url === `${API}/issues` && req.method === "POST") {
           this.handleCreateIssue(req, res);
           return;
         }
 
-        if (req.url?.startsWith("/issues") && req.method === "GET") {
+        if (req.url?.startsWith(`${API}/issues`) && req.method === "GET") {
           this.handleListIssues(req, res);
           return;
         }
 
-        if (req.url?.startsWith("/issues/") && req.method === "DELETE") {
+        if (req.url?.startsWith(`${API}/issues/`) && req.method === "DELETE") {
           this.handleAckIssue(req, res);
           return;
         }
 
-        if (req.url === "/compare-session" && req.method === "GET") {
+        if (req.url === `${API}/compare-session` && req.method === "GET") {
           this.handleGetCompareSession(req, res);
           return;
         }
 
-        if (req.url === "/compare-session" && req.method === "PUT") {
+        if (req.url === `${API}/compare-session` && req.method === "PUT") {
           this.handleSaveCompareSession(req, res);
           return;
         }
 
-        if (req.url === "/compare-session" && req.method === "DELETE") {
+        if (req.url === `${API}/compare-session` && req.method === "DELETE") {
           this.handleClearCompareSession(req, res);
           return;
         }
 
-        if (req.url === "/compare-session/history" && req.method === "GET") {
+        if (req.url === `${API}/compare-session/history` && req.method === "GET") {
           this.handleListCompareHistory(req, res);
           return;
         }
 
-        if (req.url === "/compare-session/history" && req.method === "POST") {
+        if (req.url === `${API}/compare-session/history` && req.method === "POST") {
           this.handlePushCompareHistory(req, res);
           return;
         }
 
         if (
-          req.url?.startsWith("/compare-session/history/") &&
+          req.url?.startsWith(`${API}/compare-session/history/`) &&
           req.url.endsWith("/pin") &&
           req.method === "PUT"
         ) {
@@ -104,7 +118,7 @@ export class Leader {
         }
 
         if (
-          req.url?.startsWith("/compare-session/history/") &&
+          req.url?.startsWith(`${API}/compare-session/history/`) &&
           req.method === "DELETE"
         ) {
           this.handleDeleteCompareHistory(req, res);
@@ -161,7 +175,12 @@ export class Leader {
     });
     req.on("end", async () => {
       try {
-        const rpcReq: RPCRequest = JSON.parse(body);
+        const parsed = RPCRequestSchema.safeParse(JSON.parse(body));
+        if (!parsed.success) {
+          this.sendJSON(res, 400, { error: parsed.error.issues[0].message });
+          return;
+        }
+        const rpcReq = parsed.data;
 
         // Handle list_files as a special RPC (not forwarded to plugin)
         if (rpcReq.tool === "list_files") {
@@ -242,14 +261,12 @@ export class Leader {
     });
     req.on("end", () => {
       try {
-        const issue: NewFlaggedIssue = JSON.parse(body);
-        if (!issue.tabUrl || !issue.selector || !issue.screenshotBase64 || !issue.bbox) {
-          this.sendJSON(res, 400, {
-            error: "issue requires tabUrl, selector, bbox, and screenshotBase64",
-          });
+        const parsed = NewFlaggedIssueSchema.safeParse(JSON.parse(body));
+        if (!parsed.success) {
+          this.sendJSON(res, 400, { error: parsed.error.issues[0].message });
           return;
         }
-        const created = this.issues.add(issue);
+        const created = this.issues.add(parsed.data);
         this.sendJSON(res, 200, { data: created });
       } catch (err) {
         this.sendJSON(res, 400, {
@@ -273,7 +290,7 @@ export class Leader {
     res: http.ServerResponse
   ): void {
     const url = new URL(req.url ?? "", "http://localhost");
-    const id = url.pathname.slice("/issues/".length);
+    const id = url.pathname.slice(`${API}/issues/`.length);
     const ok = this.issues.ack(id);
     if (!ok) {
       this.sendJSON(res, 404, { error: `issue ${id} not found` });
@@ -299,12 +316,12 @@ export class Leader {
     });
     req.on("end", () => {
       try {
-        const session: CompareSession = JSON.parse(body);
-        if (!session.image || session.nodeId === undefined) {
-          this.sendJSON(res, 400, { error: "compare session requires image and nodeId" });
+        const parsed = CompareSessionSchema.safeParse(JSON.parse(body));
+        if (!parsed.success) {
+          this.sendJSON(res, 400, { error: parsed.error.issues[0].message });
           return;
         }
-        const saved = this.compareSession.set(session);
+        const saved = this.compareSession.set(parsed.data);
         this.sendJSON(res, 200, { data: saved });
       } catch (err) {
         this.sendJSON(res, 400, {
@@ -339,12 +356,12 @@ export class Leader {
     });
     req.on("end", () => {
       try {
-        const session: CompareSession = JSON.parse(body);
-        if (!session.image || session.nodeId === undefined) {
-          this.sendJSON(res, 400, { error: "compare session requires image and nodeId" });
+        const parsed = CompareSessionSchema.safeParse(JSON.parse(body));
+        if (!parsed.success) {
+          this.sendJSON(res, 400, { error: parsed.error.issues[0].message });
           return;
         }
-        const pushed = this.compareSession.pushHistory(session);
+        const pushed = this.compareSession.pushHistory(parsed.data);
         this.sendJSON(res, 200, { data: pushed });
       } catch (err) {
         this.sendJSON(res, 400, {
@@ -359,15 +376,19 @@ export class Leader {
     res: http.ServerResponse
   ): void {
     const url = new URL(req.url ?? "", "http://localhost");
-    const id = url.pathname.slice("/compare-session/history/".length, -"/pin".length);
+    const id = url.pathname.slice(`${API}/compare-session/history/`.length, -"/pin".length);
     let body = "";
     req.on("data", (chunk: Buffer) => {
       body += chunk.toString();
     });
     req.on("end", () => {
       try {
-        const { pinned } = JSON.parse(body) as { pinned: boolean };
-        const entry = this.compareSession.setPinned(id, pinned);
+        const parsed = z.object({ pinned: z.boolean() }).safeParse(JSON.parse(body));
+        if (!parsed.success) {
+          this.sendJSON(res, 400, { error: parsed.error.issues[0].message });
+          return;
+        }
+        const entry = this.compareSession.setPinned(id, parsed.data.pinned);
         if (!entry) {
           this.sendJSON(res, 404, { error: `history entry ${id} not found` });
           return;
@@ -386,7 +407,7 @@ export class Leader {
     res: http.ServerResponse
   ): void {
     const url = new URL(req.url ?? "", "http://localhost");
-    const id = url.pathname.slice("/compare-session/history/".length);
+    const id = url.pathname.slice(`${API}/compare-session/history/`.length);
     const ok = this.compareSession.deleteHistory(id);
     if (!ok) {
       this.sendJSON(res, 404, { error: `history entry ${id} not found` });

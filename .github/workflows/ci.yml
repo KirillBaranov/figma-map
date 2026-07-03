@@ -116,7 +116,7 @@ jobs:
           args: check
 
   bridge:
-    name: bridge (plugin + server build)
+    name: bridge + backend (plugin + backend build)
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
     steps:
@@ -124,9 +124,11 @@ jobs:
       - uses: tj-actions/changed-files@v46
         id: changed
         with:
-          files: bridge/**
+          files: |
+            bridge/**
+            backend/**
       - if: steps.changed.outputs.any_changed != 'true'
-        run: echo "no bridge/ changes — skipping" && exit 0
+        run: echo "no bridge/ or backend/ changes — skipping" && exit 0
       - if: steps.changed.outputs.any_changed == 'true'
         uses: actions/setup-node@v4
         with:
@@ -138,8 +140,8 @@ jobs:
           npm ci
           npm run build
       - if: steps.changed.outputs.any_changed == 'true'
-        name: build server
+        name: build backend
         run: |
-          cd bridge/server
+          cd backend
           npm ci
           npm run build

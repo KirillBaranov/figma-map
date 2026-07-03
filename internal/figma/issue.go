@@ -63,7 +63,7 @@ type IssueSource interface {
 // ListIssues fetches pending issues from the bridge's /issues inbox,
 // optionally filtered to a single file.
 func (b *Bridge) ListIssues(ctx context.Context, fileKey string) ([]Issue, error) {
-	url := b.baseURL + "/issues"
+	url := b.baseURL + apiV1 + "/issues"
 	if fileKey != "" {
 		url += "?fileKey=" + fileKey
 	}
@@ -103,7 +103,7 @@ func (b *Bridge) ListIssues(ctx context.Context, fileKey string) ([]Issue, error
 
 // AckIssue marks a flagged issue as handled, removing it from the inbox.
 func (b *Bridge) AckIssue(ctx context.Context, id string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, b.baseURL+"/issues/"+id, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, b.baseURL+apiV1+"/issues/"+id, nil)
 	if err != nil {
 		return err
 	}
