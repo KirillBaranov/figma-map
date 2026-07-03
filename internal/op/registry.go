@@ -662,7 +662,7 @@ var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
 		"extension grabbing a live-page crop) and there's no URL or node id to re-fetch from. " +
 		"Each image argument may be a local file path, a data:image/...;base64,... URI, or a " +
 		"bare base64 PNG string. Returns the same diffPct/match/Regions shape as `verify pixeldiff`.",
-	Run: func(ctx context.Context, s *service.Service, in pixelDiffImagesIn) (service.PixelDiffResult, error) {
+	Run: func(_ context.Context, _ *service.Service, in pixelDiffImagesIn) (service.PixelDiffResult, error) {
 		img1, err := loadImageInput(in.Image1)
 		if err != nil {
 			return service.PixelDiffResult{}, fmt.Errorf("image1: %w", err)
