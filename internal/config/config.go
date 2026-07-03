@@ -24,6 +24,21 @@ type Config struct {
 	// LLM configuration. BaseURL is OpenAI-compatible, so it also points at the
 	// kb-labs gateway or a local Ollama/llava server.
 	LLM LLMConfig `yaml:"llm"`
+
+	// Figma selects and configures the figma.Source backend (ADR-0003 §5).
+	Figma FigmaSourceConfig `yaml:"figma"`
+}
+
+// FigmaSourceConfig selects which figma.Source implementation to use.
+type FigmaSourceConfig struct {
+	// Source is "bridge" (default — live plugin via WebSocket, full feature
+	// set including capture issues/compare) or "rest" (Figma REST API,
+	// headless/CI-friendly, read-only — see ADR-0003 §5 and README's
+	// Limitations for what "rest" can't do).
+	Source string `yaml:"source"`
+	// TokenEnv names the environment variable holding a Figma personal
+	// access token / Dev Mode token, read only when Source is "rest".
+	TokenEnv string `yaml:"tokenEnv"`
 }
 
 // LLMConfig configures the vision model used for matching and prop inference.
@@ -45,6 +60,10 @@ func Defaults() Config {
 		LLM: LLMConfig{
 			Model:     "gpt-4o-mini",
 			APIKeyEnv: "OPENAI_API_KEY",
+		},
+		Figma: FigmaSourceConfig{
+			Source:   "bridge",
+			TokenEnv: "FIGMA_TOKEN",
 		},
 	}
 }
@@ -77,4 +96,16 @@ func (c Config) APIKey() (string, bool) {
 	}
 	key := os.Getenv(env)
 	return key, key != ""
+}
+
+// FigmaToken returns the Figma REST API token from the configured
+// environment variable (only meaningful when Figma.Source is "rest"). The
+// bool is false when the variable is unset or empty.
+func (c Config) FigmaToken() (string, bool) {
+	env := c.Figma.TokenEnv
+	if env == "" {
+		env = "FIGMA_TOKEN"
+	}
+	token := os.Getenv(env)
+	return token, token != ""
 }

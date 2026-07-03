@@ -28,7 +28,20 @@ type Service struct {
 // New constructs a Service. It never requires an API key — deterministic
 // operations run without one.
 func New(cfg config.Config) *Service {
-	return &Service{cfg: cfg, src: figma.NewBridge(cfg.Bridge)}
+	return &Service{cfg: cfg, src: newSource(cfg)}
+}
+
+// newSource picks the figma.Source backend per cfg.Figma.Source (ADR-0003
+// §5): "bridge" (default, live plugin) or "rest" (Figma REST API, headless/
+// CI, read-only — figma_map.example.yaml documents the tradeoff, and
+// README's Limitations spells out what "rest" can't do, e.g. capture
+// issues/compare).
+func newSource(cfg config.Config) figma.Source {
+	if cfg.Figma.Source == "rest" {
+		token, _ := cfg.FigmaToken()
+		return figma.NewRESTSource(token, cfg.FileKey)
+	}
+	return figma.NewBridge(cfg.Bridge)
 }
 
 // Config exposes the loaded configuration (read-only use by callers).

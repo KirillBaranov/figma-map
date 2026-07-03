@@ -133,7 +133,7 @@ Or download a prebuilt archive from the
 |---|---|
 | **Google Chrome / Chromium** | headless screenshots of Storybook stories |
 | **Storybook 7+** running | exposes the `index.json` story manifest |
-| **bridge/ plugin+server running** (vendored fork of [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge), see [bridge/NOTICE.md](bridge/NOTICE.md)) | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix bridge/server run build && node bridge/server/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `bridge/plugin/manifest.json`) |
+| **backend + bridge/plugin running** (backend is a vendored fork of [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge)'s server, see [bridge/NOTICE.md](bridge/NOTICE.md)) | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix backend run build && node backend/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `bridge/plugin/manifest.json`) |
 | **OpenAI-compatible vision endpoint + key** | matching and prop inference (works with OpenAI, a local Ollama/llava server, or any compatible gateway via `llm.baseURL`) |
 
 ## Quick start
@@ -249,6 +249,9 @@ llm:
   baseURL: ""          # empty = OpenAI; or a gateway / Ollama endpoint
   model: gpt-4o-mini
   apiKeyEnv: OPENAI_API_KEY
+figma:
+  source: bridge        # "bridge" (default) or "rest" — see Limitations
+  tokenEnv: FIGMA_TOKEN  # only used when source: rest
 ```
 
 ## Architecture
@@ -260,49 +263,53 @@ internal/
   clibind/           binds an input struct to cobra flags/args (same tags as MCP)
   service/           all logic (deterministic-first; lazy LLM)
   config/            figma-map.yaml + env override
-  figma/             Source interface + bridge backend; node tokens (Style)
+  figma/             Source interface + bridge/REST backends; node tokens (Style)
   storybook/         index.json → catalog; chromedp screenshots; import parsing
   render/            chromedp DOM extraction (computed styles) + screenshots
   matcher/           Matcher interface + vision implementation; ground-truth name match
   binding/           figma-map.binding.yaml model (load/save)
   codegen/           binding + props → JSX
   llm/               OpenAI-compatible vision client (configurable base URL)
+backend/             leader/election relay + persistent data plane (:1994) —
+                     /rpc for CLI/MCP, /issues + /compare-session for the
+                     extension, persisted to ~/.figma-map/backend/*.json
 bridge/
   plugin/            sandboxed JS inside Figma — node/style/variable serialization
-  server/            leader/election relay (:1994) — /rpc for CLI/MCP, /issues for the extension
   extension/         browser extension — flags live-page issues, links them to a Figma node
 ```
 
 Each operation is declared once in `internal/op`; the CLI subcommand and the MCP
 tool are both generated from it, so they cannot drift (enforced by a convergence
-test). The `figma.Source` and `matcher.Matcher` interfaces are extension seams: a
-Figma REST backend (for CI) and an embedding-based retriever (for large
-libraries) can be added without touching callers. Layer boundaries and what
+test). The `figma.Source` and `matcher.Matcher` interfaces are extension seams:
+a Figma REST backend (`figma.source: rest`, for headless/CI) already ships
+behind `figma.Source` with zero changes to any caller; an embedding-based
+retriever for large libraries could be added the same way behind
+`matcher.Matcher`. Layer boundaries and what
 each is/isn't responsible for are fixed in
 [ADR-0002](docs/adr/ADR-0002-layer-boundaries.md).
 
 ### Request flow
 
-Nothing talks to Figma directly — every read/write goes through the bridge, which
+Nothing talks to Figma directly — every read/write goes through the backend, which
 relays it over a WebSocket to a plugin running inside the open Figma file. The
-bridge also fronts a second, unrelated contract for the browser extension —
+backend also fronts a second, unrelated contract for the browser extension —
 flagging an issue on a live page never touches the RPC/WebSocket path at all:
 
 ```mermaid
 flowchart LR
     CLI["figma-map CLI"] --> SVC
     MCP["figma-map mcp (stdio)"] --> SVC
-    SVC["internal/service"] -->|HTTP POST /rpc| Bridge
-    Bridge["bridge/server\n(:1994 — HTTP + WebSocket)"] <-->|WebSocket| Plugin
+    SVC["internal/service"] -->|HTTP POST /rpc| Backend
+    Backend["backend\n(:1994 — HTTP + WebSocket)"] <-->|WebSocket| Plugin
     Plugin["bridge/plugin\n(sandboxed JS inside Figma)"] --> Doc[("the open Figma file")]
-    Ext["bridge/extension\n(content script on the live page)"] -->|HTTP /issues| Bridge
+    Ext["bridge/extension\n(content script on the live page)"] -->|HTTP /issues| Backend
 ```
 
 `capture issues` / `capture ack` (CLI/MCP) read that same inbox — a human flags
 a mismatch in the browser, the agent picks it up as structured ground truth
 (screenshot, bounds, linked Figma node id), never a raw pixel guess.
 
-The bridge's per-request timeout is 30s — fine for a single node, not for fully
+The backend's per-request timeout is 30s — fine for a single node, not for fully
 resolving styles/variables across a whole document. So the plugin offers two
 shapes of fetch, and each `internal/service` operation picks the cheap one
 whenever it can:
@@ -372,8 +379,20 @@ Honest gaps in the current release, not hidden behaviour:
   advisory.
 - **Responsive is per-frame** — reconcile checks against one frame at the frame's
   width; behavior between breakpoints the design doesn't specify is out of scope.
-- **The bridge requires Figma desktop open** with the plugin running. A REST
-  backend for headless/CI use is a planned `figma.Source` implementation.
+- **The bridge requires Figma desktop open** with the plugin running. For
+  headless/CI/server-side agents, set `figma.source: rest` (`figma-map.example.yaml`)
+  to use the Figma REST API instead (`figma.tokenEnv`, a Dev Mode/Enterprise-plan
+  token) — additive, not a default, and strictly read-only: `find`/`inspect`/
+  `tokens`/`screenshot`/`export-assets`/`map`/`plan`/`bind` work, but
+  `capture issues`/`verify pixeldiff-images`/the compare loop do **not** — those
+  require a live DOM and a live Figma document in sync, which a static REST
+  snapshot can't provide (`capture issues`/`ack` fail with a clear
+  "issue inbox requires a bridge connection" rather than silently no-op'ing).
+  `Selection` similarly errors instead of returning an empty result — the REST
+  API has no concept of "what's currently selected in the editor." A handful of
+  Node fields the bridge fills from a live document (bound-variable resolution
+  beyond fills/strokes, prototyping reactions, dev-resources, annotations, grid
+  position) aren't mapped from REST yet — left absent, never fabricated.
 
 ## Contributing
 
