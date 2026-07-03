@@ -2,9 +2,13 @@
 
 # figma-map
 
-**Map Figma design components to your code component library using a vision LLM.**
+**The ground-truth layer that lets AI coding agents build pixel-perfect UI from Figma.**
 
-Match once with AI into a reviewable binding, then generate code deterministically.
+Agents that build from a screenshot guess. figma-map gives them exact
+structure and tokens to build from, and a closed verify loop — render the
+implementation, diff its real DOM against the design's exact values — so the
+agent knows precisely what's still wrong instead of eyeballing "looks about
+right."
 
 [![CI](https://github.com/KirillBaranov/figma-map/actions/workflows/ci.yml/badge.svg)](https://github.com/KirillBaranov/figma-map/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/kirillbaranov/figma-map.svg)](https://pkg.go.dev/github.com/kirillbaranov/figma-map)
@@ -16,39 +20,45 @@ Match once with AI into a reviewable binding, then generate code deterministical
 
 ---
 
-figma-map answers a question every design-system team hits: *"which `<Button>` is
-this Figma layer, and with what props?"* — automatically.
-
-Instead of hand-maintaining a mapping between your design library in Figma and
-your component library in code, figma-map builds that mapping **once** with a
-vision LLM, lets you **review** it, then applies it **deterministically** to
-generate JSX.
-
-```text
-// 13:1077 → Button (0.80)
-import { Button } from "@/components/ui/button"
-
-<Button>View docs</Button>
+```jsonc
+// verify reconcile 55:1140 --story cta-banner
+{ "match": false, "remaining": 2, "byElement": [
+    { "nodeId": "55:1140", "name": "CTA", "diffs": [
+        { "prop": "background-color", "is": "rgb(31,41,55)", "should": "#18181b" },
+        { "prop": "padding-left", "is": "12px", "should": "16px" } ] } ] }
 ```
+
+That's the primitive everything else is built on: not "does this look
+right," but *exactly* which element, which property, which value — an agent
+can act on that and loop until it's gone.
 
 ## Features
 
-- **AI runs once, codegen runs forever.** `bind` matches your Figma library to
-  your code library with a vision LLM a single time, into a reviewable
-  `figma-map.binding.yaml`. Every `map`/`plan`/`codegen` call after that is
-  plain, repeatable, CI-friendly code generation — no LLM in the hot path.
-- **Ground truth before vision.** Component identity and prop values are read
-  straight from Figma — instance name, main-component name, `componentProps`,
-  bound-Variable `codeSyntax` — whenever Figma already has the answer. The
-  vision model is the fallback, not the default.
-- **Exact verification, not "looks right."** `verify reconcile` renders your
-  implementation, reads its actual DOM, and diffs computed styles against the
-  design's exact tokens: per-element `is → should` numbers, not a screenshot
-  for you to eyeball. `verify pixeldiff` adds a worst-region breakdown for
-  anything text-diffing can't catch.
+- **A closed verify loop, not a screenshot to eyeball.** `verify reconcile`
+  renders your implementation, reads its actual DOM, and diffs computed
+  styles against the design's exact tokens: per-element `is → should`
+  numbers. `verify pixeldiff` adds a worst-region breakdown for anything
+  text-diffing can't catch. This is what makes an otherwise-unreliable agent
+  converge instead of guessing forever.
+- **Ground truth before vision, everywhere.** Node structure, exact
+  tokens, component identity, and prop values are read straight from Figma —
+  instance name, main-component name, `componentProps`, bound-Variable
+  `codeSyntax` — whenever Figma already has the answer. A vision model is the
+  fallback for the one question Figma's data model can't answer (*which code
+  component is this?*), never the default.
+- **AI runs once, codegen runs forever.** That one vision-dependent question —
+  matching your Figma library to your code library — is answered once, via
+  `bind`, into a reviewable `figma-map.binding.yaml`. Every `map`/`plan`/
+  `codegen`/`verify` call after that is plain, repeatable, CI-friendly code —
+  no LLM in the hot path.
 - **MCP-native.** Every CLI command is generated from the same registry as an
-  MCP tool (`figma_find`, `build_plan`, …) — point an agent at it and it gets
-  the identical surface, flags included, with zero drift between the two.
+  MCP tool (`figma_find`, `build_plan`, `verify_reconcile`, …) — point an
+  agent at it and it gets the identical surface, flags included, with zero
+  drift between the two.
+- **Closes the loop on live pages too.** A browser extension flags a mismatch
+  a human spots on a running page and links it to its Figma node — the agent
+  picks that up as structured ground truth (`capture issues`), never a raw
+  pixel guess.
 - **No Figma REST rate limits.** A bridge plugin running inside your open
   Figma file talks to figma-map directly over a local WebSocket — no API
   token, no per-minute request ceiling, no waiting on Figma's API quota.
@@ -60,11 +70,12 @@ import { Button } from "@/components/ui/button"
 
 - [Features](#features)
 - [Why](#why)
-- [How it works: bind → apply](#how-it-works-bind--apply)
+- [How it works: the agent loop](#how-it-works-the-agent-loop)
+- [Component identity: bind → apply](#component-identity-bind--apply)
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Commands](#commands)
-- [Agent / MCP integration](#agent--mcp-integration)
+- [MCP integration](#mcp-integration)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Limitations](#limitations)
@@ -73,20 +84,56 @@ import { Button } from "@/components/ui/button"
 
 ## Why
 
-Translating a Figma design into code means repeatedly recognizing *"this is our
-Button, in the secondary variant, large size"* and writing the matching JSX.
-That recognition is mechanical but tedious, and it drifts as the design system
-evolves.
+Pointing an agent at a Figma screenshot and asking it to "build this" mostly
+works — until it doesn't, and there's no way to tell *how far off* without a
+human eyeballing a diff. The agent picked a color close enough, a padding
+that's 4px short, the wrong variant of your `<Button>` — and nothing in the
+loop can tell it that, so it stops when it *looks* done, not when it *is*
+done.
 
-figma-map treats the design library and the code library as two sets of images
-and learns the correspondence between them — the same way you would by eye, but
-captured as a committable artifact instead of living in someone's head.
+figma-map closes that loop. It reads Figma's actual data — not a rendered
+picture of it — for structure, tokens, and (via a one-time binding) component
+identity, and it can re-render the agent's own output and diff it against
+that same ground truth, property by property. The agent gets exact numbers to
+fix, not vibes to interpret, so the loop actually converges on the design
+instead of stalling on "close enough."
 
-## How it works: bind → apply
+## How it works: the agent loop
 
-The tool is built around a reviewable artifact, `figma-map.binding.yaml`, the
-same way codegen and i18n tools work. The AI runs **once**, during `bind`;
-everything downstream is deterministic and CI-friendly.
+figma-map doesn't build the page — the agent does, and figma-map is a
+deterministic instrument it drives at each step (see
+[ADR-0001](docs/adr/ADR-0001-dumb-tool.md): it measures, it doesn't guess).
+
+1. **`build plan <nodeId>`** → a buildable spec: layout, each component
+   instance mapped to your code (import + props), exact tokens, and an honest
+   list of what couldn't be mapped.
+2. The agent **writes the code**, stamping each element with
+   `data-figma-node="<id>"` so it can be measured later. Unmapped pieces are
+   hand-built from `figma tokens`; assets come from `capture export` (not
+   regenerated).
+3. The agent **renders** it (a Storybook story or a dev-server URL).
+4. **`verify reconcile <nodeId> --story <id>`** (or `--url`) renders the
+   implementation, reads its DOM computed styles, and diffs them against the
+   design's exact tokens, returning per-element `is`/`should` numbers (see the
+   example at the top).
+5. The agent **fixes the exact properties** and loops from step 3 until
+   `match: true`. Add `--semantic` for an LLM check of missing elements /
+   wrong assets that numbers can't catch.
+
+A ready-made agent skill ships at
+[`.claude/skills/figma-map/SKILL.md`](.claude/skills/figma-map/SKILL.md): it
+teaches an agent this loop, the `data-figma-node` contract, and when to use
+each operation. Claude Code picks it up automatically when figma-map work
+comes up.
+
+## Component identity: bind → apply
+
+Step 1 of the loop above (`build plan`) needs to know *which* code component
+a Figma instance is. That mapping is the one place vision is unavoidable —
+Figma's data model has no field for "this is our `<Button>`" — so it's solved
+once, up front, into a reviewable artifact, `figma-map.binding.yaml`. The AI
+runs **once**, during `bind`; everything downstream is deterministic and
+CI-friendly.
 
 ```text
   Storybook ──scan──▶  catalog/            (screenshots + import paths, no AI)
@@ -187,53 +234,18 @@ Pass `--file <fileKey>` to any command when multiple Figma files are connected,
 and `--json` for machine-readable output. Run `figma-map <group> <command> --help`
 for full flags.
 
-## Agent / MCP integration
+## MCP integration
 
-figma-map is built to be driven by an AI coding agent — point it at a Figma frame
-and have it build the page, verifying against the design in a loop. Every command
-above is also an **MCP tool** (same names, same parameters): the CLI and the MCP
-server are generated from one registry, so they never drift.
+Every command in the table above is also an **MCP tool** (same names, same
+parameters): the CLI and the MCP server are generated from one registry, so
+they never drift. This is what lets an agent drive the whole loop above
+itself, tool call by tool call.
 
 Configure your agent (Claude Code, Cursor, …):
 
 ```json
 { "mcpServers": { "figma-map": { "command": "figma-map", "args": ["mcp"] } } }
 ```
-
-### The loop: build a page from a mockup
-
-The agent owns the loop; figma-map is a deterministic tool — it measures, it
-doesn't guess (see [ADR-0001](docs/adr/ADR-0001-dumb-tool.md)).
-
-1. **`build plan <nodeId>`** → a buildable spec: layout, each component instance
-   mapped to your code (import + props), exact tokens, and an honest list of
-   what couldn't be mapped.
-2. The agent **writes the code**, stamping each element with
-   `data-figma-node="<id>"` so it can be measured later. Unmapped pieces are
-   hand-built from `figma tokens`; assets come from `capture export` (not
-   regenerated).
-3. The agent **renders** it (a Storybook story or a dev-server URL).
-4. **`verify reconcile <nodeId> --story <id>`** (or `--url`) → figma-map renders the
-   implementation, reads its DOM computed styles, and diffs them against the
-   design's exact tokens, returning **per-element is/should numbers**:
-
-   ```jsonc
-   { "match": false, "remaining": 2, "byElement": [
-       { "nodeId": "55:1140", "name": "CTA", "diffs": [
-           { "prop": "background-color", "is": "rgb(31,41,55)", "should": "#18181b" },
-           { "prop": "padding-left", "is": "12px", "should": "16px" } ] } ] }
-   ```
-5. The agent fixes the exact properties and loops from step 3 until
-   `match: true`. Add `--semantic` for an LLM check of missing elements / wrong
-   assets that numbers can't catch.
-
-Because the feedback is exact numbers tied to specific elements, the loop
-converges — this is what makes an otherwise-unreliable agent reliable.
-
-A ready-made agent skill ships at
-[`.claude/skills/figma-map/SKILL.md`](.claude/skills/figma-map/SKILL.md): it
-teaches an agent the loop, the `data-figma-node` contract, and when to use each
-operation. Claude Code picks it up automatically when figma-map work comes up.
 
 ## Configuration
 
