@@ -56,3 +56,12 @@ tracked as separate follow-up work, not part of this layout change.
 - ADR-0002 and ADR-0003's own text is left as an accurate historical
   snapshot of the layout at the time each was written; both get a short
   amendment line pointing here rather than being rewritten in place.
+
+**Amendment (2026-07-03):** §3's tracked follow-up (rewriting
+`election.ts`/`follower.ts`/`index.ts`/`node.ts` to drop the fork
+dependency) was done independently and in parallel, in a separate PR that
+also rewrote `serializer.ts`/`code.ts` — merged into `main` around the same
+time as this ADR. See [ADR-0005](ADR-0005-backend-fork-removal.md), which
+also removes the NOTICE/LICENSE files §2 added here (and
+`backend/UPSTREAM-README.md`/`backend/logo.png`), since none of them
+describe a fork that still exists after that rewrite.

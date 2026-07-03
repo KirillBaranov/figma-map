@@ -1,88 +1,93 @@
 import type { Node } from "./node.js";
 import { Role } from "./types.js";
 
+const HEALTH_CHECK_TIMEOUT_MS = 2_000;
+const MIN_POLL_INTERVAL_MS = 3_000;
+const POLL_JITTER_MS = 2_000;
+
 /**
- * Election handles leader detection and role transitions.
- *
- * On start it attempts to become leader (by binding the port).
- * If the port is taken and a healthy leader is found, it becomes a follower.
- * A periodic ticker monitors the leader and triggers takeover if it dies.
+ * Drives role transitions for a single process: claim the port as leader if
+ * free, otherwise follow whoever holds it. A periodic health check watches
+ * the leader (from a follower's perspective) and triggers takeover once it
+ * stops answering /ping.
  */
 export class Election {
-  private interval: ReturnType<typeof setInterval> | null = null;
-  private leaderUrl: string;
+  private readonly leaderHealthUrl: string;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private port: number,
-    private node: Node
+    private readonly port: number,
+    private readonly node: Node
   ) {
-    this.leaderUrl = `http://localhost:${port}`;
+    this.leaderHealthUrl = `http://localhost:${port}/ping`;
   }
 
   async start(): Promise<void> {
-    // Determine initial role
-    await this.determineRole();
+    await this.resolveInitialRole();
 
-    // Continuous monitoring with random jitter (3-5 s)
-    const jitter = 3_000 + Math.random() * 2_000;
-    this.interval = setInterval(() => {
-      this.checkAndUpdateRole().catch((err) => {
+    // Jitter the poll cadence so multiple followers don't all probe /ping
+    // in lockstep after a leader dies.
+    const cadence = MIN_POLL_INTERVAL_MS + Math.random() * POLL_JITTER_MS;
+    this.pollTimer = setInterval(() => {
+      this.onPollTick().catch((err) => {
         console.error("Election check error:", err);
       });
-    }, jitter);
+    }, cadence);
   }
 
   stop(): void {
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
   }
 
-  private async checkAndUpdateRole(): Promise<void> {
-    switch (this.node.role) {
-      case Role.Follower: {
-        const alive = await this.pingLeader();
-        if (!alive) {
-          console.error("Leader not responding, attempting takeover...");
-          try {
-            await this.node.becomeLeader();
-          } catch (err) {
-            console.error("Failed to become leader:", err);
-          }
-        }
-        break;
-      }
-      case Role.Leader:
-        // Nothing to do — we are the leader
-        break;
-      case Role.Unknown:
-        await this.determineRole();
-        break;
+  private async onPollTick(): Promise<void> {
+    if (this.node.role === Role.Leader) {
+      return; // we hold the port, nothing to watch
     }
-  }
+    if (this.node.role === Role.Unknown) {
+      await this.resolveInitialRole();
+      return;
+    }
+    // Role.Follower
+    const leaderReachable = await this.pingLeader();
+    if (leaderReachable) return;
 
-  private async determineRole(): Promise<void> {
-    // Try to become leader first
+    console.error("Leader not responding, attempting takeover...");
     try {
       await this.node.becomeLeader();
-      return;
-    } catch {
-      // Port likely in use — check if there's a valid leader
+    } catch (err) {
+      console.error("Failed to become leader:", err);
     }
+  }
 
+  private async resolveInitialRole(): Promise<void> {
+    const claimed = await this.tryClaimLeadership();
+    if (claimed) return;
+
+    // Someone else already owns the port — follow them if they're healthy.
+    // If the ping also fails, we stay Unknown and retry on the next tick.
     if (await this.pingLeader()) {
       this.node.becomeFollower();
     }
-    // If ping fails too, next tick will retry
+  }
+
+  private async tryClaimLeadership(): Promise<boolean> {
+    try {
+      await this.node.becomeLeader();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async pingLeader(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.leaderUrl}/ping`, {
-        signal: AbortSignal.timeout(2_000),
+      const res = await fetch(this.leaderHealthUrl, {
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
       });
-      return response.ok;
+      return res.ok;
     } catch {
       return false;
     }

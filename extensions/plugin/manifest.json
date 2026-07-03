@@ -1,6 +1,6 @@
 {
   "name": "Figma MAP Bridge",
-  "id": "figma-mcp-bridge",
+  "id": "figma-bridge",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/index.html",

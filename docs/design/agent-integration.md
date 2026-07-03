@@ -20,7 +20,7 @@
 3. **The headline feature is `reconcile`:** vision-LLM semantic diff between the
    Figma design and the agent's rendered output, returning *actionable
    structured feedback* the agent can loop on. This is "сводить визуал".
-4. **Don't reinvent raw Figma access.** `figma-mcp-bridge` already exposes raw
+4. **Don't reinvent raw Figma access.** `figma-bridge` already exposes raw
    Figma over MCP. figma-map's value is the *mapping / planning / reconciliation*
    layer on top. figma-map's MCP server is the single surface the agent
    configures; it uses the bridge internally.
@@ -50,13 +50,13 @@ The user's phrasing — *"чтобы агент мог запрашивать н
 - **A. Data access** — query the design + the mapping (steps 1, 2).
 - **B. Visual reconciliation** — compare implementation vs design (step 5).
 
-## 2. Where figma-map sits vs figma-mcp-bridge
+## 2. Where figma-map sits vs figma-bridge
 
 This is the key architectural boundary.
 
 | Concern | Owner |
 |---|---|
-| Raw Figma access (node tree, screenshots, styles, edits) | **figma-mcp-bridge** (already an MCP server + `/rpc`) |
+| Raw Figma access (node tree, screenshots, styles, edits) | **figma-bridge** (already an MCP server + `/rpc`) |
 | Code catalog, component mapping, prop inference, codegen, **visual reconciliation** | **figma-map** (the value layer) |
 
 So figma-map's MCP tools should **not** duplicate `get_node` / `get_screenshot`.

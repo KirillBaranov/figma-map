@@ -47,19 +47,22 @@ flowchart TD
     EXT -.->|reads, no write| FIGMA
 ```
 
-### 1. Figma plugin (`bridge/plugin`)
+### 1. Figma plugin (`extensions/plugin`, was `bridge/plugin`)
 
 **Owns:** the only code with live access to the Figma document. Serializes
 nodes/styles/variables, answers RPC calls over the WebSocket.
 **Never:** decides anything, knows who's asking (CLI vs MCP vs extension are
 indistinguishable to it), retains state across requests.
-**Provenance:** forked from
-[gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) (MIT,
-see `bridge/NOTICE.md`). `code.ts`/`serializer.ts` are majority original,
-extended in place (Variables, GRID autolayout, prototyping, extra style
-fields). `App.tsx` (the in-Figma panel UI) has been substantially rewritten.
+**Provenance:** originated as a fork of
+[gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge) (MIT).
+As of [ADR-0005](ADR-0005-backend-fork-removal.md), `code.ts`/`serializer.ts`
+have been rewritten from scratch (independent implementation, same wire
+behavior) and carry no fork attribution — `extensions/plugin/NOTICE.md` and
+`LICENSE.md` (added by [ADR-0004](ADR-0004-extensions-layout.md)'s
+re-scoping) no longer apply and were removed. `App.tsx` (the in-Figma panel
+UI) has been substantially rewritten since the original fork.
 
-### 2. Bridge server (`bridge/server`)
+### 2. Bridge server (`backend/`, was `bridge/server`)
 
 **Owns:** transport only. WebSocket session to the plugin, leader/election
 across multiple CLI processes sharing one Figma connection, RPC relay
@@ -69,9 +72,12 @@ by design, no persistence across restarts).
 inbox, not a decision-maker — flagging an issue is a capture event, acking it
 is a "handled" event, and figma-map's own ops (`verify pixeldiff-images`) do
 any actual comparison.
-**Provenance:** `leader.ts`/`election.ts`/`follower.ts`/`node.ts`/`index.ts`
-are unmodified since the fork (9ad44d3) — this is still gethopp's
-leader-election design, untouched.
+**Provenance:** `election.ts`/`follower.ts`/`node.ts`/`index.ts` were
+rewritten from scratch per [ADR-0005](ADR-0005-backend-fork-removal.md) and
+no longer carry fork attribution — `backend/NOTICE.md` and `LICENSE.md`
+(added by ADR-0004's re-scoping) no longer apply and were removed;
+`leader.ts`/`bridge.ts`/`tools.ts` were already substantially original
+before that.
 **Two separate contracts, one process:** `/rpc` (CLI/MCP ↔ plugin, the
 volatile wire protocol that evolves with the Go side) and `/issues` (extension
 ↔ bridge, a small stable REST surface). Changes to one must not leak into the
@@ -134,15 +140,20 @@ becomes view-only.
   extension does not have this constraint — a future decision to repackage
   it as its own product (tracked separately, not decided by this ADR) would
   not reintroduce wire-protocol drift.
-- Fork attribution stays regardless of how much of `bridge/plugin`/
-  `bridge/server` has since diverged — MIT requires it, and
-  `election.ts`/`follower.ts`/`node.ts`/`index.ts` are still verbatim
-  upstream today.
+- Fork attribution was removed once nothing forked remained — see
+  [ADR-0005](ADR-0005-backend-fork-removal.md). Modification alone doesn't
+  discharge MIT's notice requirement; only replacing the vendored code with
+  an independent implementation does.
 
 **Amendment (2026-07-03):** `bridge/plugin` and `bridge/extension` moved to
 `extensions/plugin` and `extensions/browser`; `bridge/server` had already
-moved to top-level `backend/` per ADR-0003. Fork attribution was re-scoped
-to `backend/NOTICE.md` and `extensions/plugin/NOTICE.md` specifically —
+moved to top-level `backend/` per ADR-0003 (see
+[ADR-0004](ADR-0004-extensions-layout.md) for the move itself).
 `extensions/browser/` (this ADR's `bridge/extension`) was already correctly
-identified above as carrying zero upstream code. See
-[ADR-0004](ADR-0004-extensions-layout.md).
+identified above as carrying zero upstream code. ADR-0004 re-scoped fork
+attribution to `backend/NOTICE.md` and `extensions/plugin/NOTICE.md`;
+[ADR-0005](ADR-0005-backend-fork-removal.md), landed the same day, went
+further and rewrote the last vendored files from scratch, so those NOTICE
+files (and `backend/LICENSE.md`/`extensions/plugin/LICENSE.md`) were removed
+again immediately after — see ADR-0005 for why re-scoping alone wasn't the
+final state.

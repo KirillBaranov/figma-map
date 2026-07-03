@@ -2,44 +2,38 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { Node } from "./node.js";
 import { Election } from "./election.js";
+import { Node } from "./node.js";
 import { registerTools } from "./tools.js";
 import { VERSION } from "./version.js";
 
-const PORT = 1994;
+const LISTEN_PORT = 1994;
 
-async function main(): Promise<void> {
-  const node = new Node(PORT);
-  const election = new Election(PORT, node);
+async function bootstrap(): Promise<void> {
+  const node = new Node(LISTEN_PORT);
+  const election = new Election(LISTEN_PORT, node);
   await election.start();
 
-  // Graceful shutdown
-  const shutdown = () => {
+  const shutdown = (): void => {
     console.error("Shutting down...");
     election.stop();
     node.stop();
     process.exit(0);
   };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  // Create MCP server (stdio transport)
-  const server = new McpServer({
+  const mcpServer = new McpServer({
     name: "figma-bridge",
     version: VERSION,
   });
-
-  registerTools(server, node, PORT);
+  registerTools(mcpServer, node, LISTEN_PORT);
 
   console.error(`Starting MCP server (role: ${node.roleName})`);
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await mcpServer.connect(new StdioServerTransport());
 }
 
-main().catch((err) => {
+bootstrap().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });
