@@ -62,7 +62,6 @@ type LogEntry = {
 
 const WS_BASE_URL = "ws://localhost:1994/ws";
 const REPO_URL = "https://github.com/KirillBaranov/figma-map";
-const UPSTREAM_FORK_URL = "https://github.com/gethopp/figma-mcp-bridge";
 const MAX_LOG_ENTRIES = 40;
 
 function formatRelativeTime(timestampMs: number, now: number): string {
@@ -476,11 +475,6 @@ export default function App() {
       <div className="footer">
         <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="footer-link">
           Figma MAP
-        </a>
-        <span className="footer-sep">·</span>
-        <span className="footer-text">based on</span>
-        <a href={UPSTREAM_FORK_URL} target="_blank" rel="noopener noreferrer" className="footer-link">
-          gethopp/figma-mcp-bridge
         </a>
       </div>
     </div>
