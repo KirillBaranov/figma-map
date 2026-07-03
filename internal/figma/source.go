@@ -1,6 +1,6 @@
 // Package figma defines the domain model for a Figma document and the Source
 // interface that abstracts where that data comes from. The bridge backend
-// (figma-mcp-bridge) is the only implementation today; a REST backend can be
+// (figma-bridge) is the only implementation today; a REST backend can be
 // added later behind the same interface.
 package figma
 

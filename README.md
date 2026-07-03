@@ -133,7 +133,7 @@ Or download a prebuilt archive from the
 |---|---|
 | **Google Chrome / Chromium** | headless screenshots of Storybook stories |
 | **Storybook 7+** running | exposes the `index.json` story manifest |
-| **backend + bridge/plugin running** (backend is a vendored fork of [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge)'s server, see [bridge/NOTICE.md](bridge/NOTICE.md)) | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix backend run build && node backend/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `bridge/plugin/manifest.json`) |
+| **backend + bridge/plugin running** | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix backend run build && node backend/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `bridge/plugin/manifest.json`) |
 | **OpenAI-compatible vision endpoint + key** | matching and prop inference (works with OpenAI, a local Ollama/llava server, or any compatible gateway via `llm.baseURL`) |
 
 ## Quick start

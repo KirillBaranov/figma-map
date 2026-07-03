@@ -58,7 +58,7 @@ matter; `docs:`, `test:`, and `chore:` are excluded from release notes.
 The end-to-end flow (`scan` → `bind` → `map`) needs:
 
 - a running Storybook (`storybook` URL in config),
-- a running figma-mcp-bridge with a Figma file connected,
+- a running figma-bridge backend with a Figma file connected,
 - an API key in the environment.
 
 `figma-map doctor` verifies all four. Live runs cost API tokens, so keep them

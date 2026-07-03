@@ -1,10 +1,10 @@
 {
-  "name": "@gethopp/figma-mcp-bridge",
+  "name": "@figma-map/backend",
   "version": "0.1.1",
-  "description": "MCP server that bridges Figma plugin data to AI tools without hitting API rate limits",
+  "description": "MCP server + HTTP backend that bridges Figma plugin data to AI tools without hitting API rate limits",
   "type": "module",
   "bin": {
-    "figma-mcp-bridge": "dist/index.js"
+    "figma-bridge": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": [
@@ -23,12 +23,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gethopp/figma-mcp-bridge.git",
-    "directory": "server"
+    "url": "git+https://github.com/KirillBaranov/figma-map.git",
+    "directory": "backend"
   },
-  "homepage": "https://github.com/gethopp/figma-mcp-bridge#readme",
+  "homepage": "https://github.com/KirillBaranov/figma-map#readme",
   "bugs": {
-    "url": "https://github.com/gethopp/figma-mcp-bridge/issues"
+    "url": "https://github.com/KirillBaranov/figma-map/issues"
   },
   "license": "MIT",
   "dependencies": {

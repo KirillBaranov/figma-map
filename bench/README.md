@@ -51,7 +51,7 @@ For human judgment (`out/sidebyside.png`, `out/<arm>_diff.png`).
 ## Reproduce
 
 Environment used: figma-map **v0.2.0**, headless Chrome, model **gpt-4o-mini**,
-figma-mcp-bridge on `:1994` with the file open, the catalog/binding from `scan`+
+figma-bridge on `:1994` with the file open, the catalog/binding from `scan`+
 `bind`.
 
 Fixed parameters: **frame `868:167`** ("Drive your design to a new age" landing

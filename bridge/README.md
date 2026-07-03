@@ -1,17 +1,11 @@
 # Figma MCP Bridge
 
-[![Pairing with Hopp](https://gethopp.app/git/hopp-shield.svg?ref=hopp-repo)](https://gethopp.app)
-
 - [Demo](#demo)
 - [Quick Start](#quick-start)
 - [Available Tools](#available-tools)
 - [Local development](#local-development)
 - [Structure](#structure)
 - [How it works](#how-it-works)
-
-<br/>
-
-<img src="https://raw.githubusercontent.com/gethopp/figma-mcp-bridge/main/logo.png" alt="Figma MCP Bridge" align="center" />
 
 <br/>
 
@@ -36,22 +30,24 @@ It also includes a small, opt-in set of **write tools** for safe agent-driven ed
 
 ### 1. Add the MCP server to your favourite AI tool
 
-Add the following to your AI tool's MCP configuration (e.g. Cursor, Windsurf, Claude Desktop):
+Build the server once, then point your AI tool's MCP configuration (e.g. Cursor, Windsurf, Claude Desktop) at it:
+
+```bash
+npm --prefix backend run build
+```
 
 ```json
 {
   "figma-bridge": {
-    "command": "npx",
-    "args": ["-y", "@gethopp/figma-mcp-bridge"]
+    "command": "node",
+    "args": ["/path/to/figma-map/backend/dist/index.js"]
   }
 }
 ```
 
-That's it — no binaries to download or install.
-
 ### 2. Add the Figma plugin
 
-Download the plugin from the [latest release](https://github.com/gethopp/figma-mcp-bridge/releases) page, then in Figma go to `Plugins > Development > Import plugin from manifest` and select the `manifest.json` file from the `plugin/` folder.
+Build the plugin (`cd bridge/plugin && npm install && npm run build`), then in Figma go to `Plugins > Development > Import plugin from manifest` and select `bridge/plugin/manifest.json`.
 
 ### 3. Start using it 🎉
 
@@ -116,25 +112,23 @@ The current version is intentionally limited — no components/instances, no var
 
 ## Local development
 
-#### 1. Clone this repository locally
+This directory lives inside the [figma-map](https://github.com/KirillBaranov/figma-map)
+monorepo — clone that repo, then work from here.
+
+#### 1. Build the server (`backend/`, sibling to this directory)
 
 ```bash
-git clone git@github.com:gethopp/figma-mcp-bridge.git
+npm --prefix ../../backend install
+npm --prefix ../../backend run build
 ```
 
-#### 2. Build the server
+#### 2. Build the plugin
 
 ```bash
-cd server && npm install && npm run build
+cd plugin && npm install && npm run build
 ```
 
-#### 3. Build the plugin
-
-```bash
-cd plugin && bun install && bun run build
-```
-
-#### 4. Add the MCP server to your favourite AI tool
+#### 3. Add the MCP server to your favourite AI tool
 
 For local development, add the following to your AI tool's MCP config:
 
@@ -142,7 +136,7 @@ For local development, add the following to your AI tool's MCP config:
 {
   "figma-bridge": {
     "command": "node",
-    "args": ["/path/to/figma-mcp-bridge/server/dist/index.js"]
+    "args": ["/path/to/figma-map/backend/dist/index.js"]
   }
 }
 ```
@@ -150,18 +144,20 @@ For local development, add the following to your AI tool's MCP config:
 ## Structure
 
 ```
-Figma-MCP-Bridge/
-├── plugin/   # Figma plugin (TypeScript/React)
-└── server/   # MCP server (TypeScript/Node.js)
-    └── src/
-        ├── index.ts      # Entry point
-        ├── bridge.ts     # WebSocket bridge to Figma plugin
-        ├── leader.ts     # Leader: HTTP server + bridge
-        ├── follower.ts   # Follower: proxies to leader via HTTP
-        ├── node.ts       # Dynamic leader/follower role switching
-        ├── election.ts   # Leader election & health monitoring
-        ├── tools.ts      # MCP tool definitions
-        └── types.ts      # Shared types
+figma-map/
+├── backend/          # MCP server + HTTP backend (TypeScript/Node.js)
+│   └── src/
+│       ├── index.ts      # Entry point
+│       ├── bridge.ts     # WebSocket bridge to Figma plugin
+│       ├── leader.ts     # Leader: HTTP server + bridge
+│       ├── follower.ts   # Follower: proxies to leader via HTTP
+│       ├── node.ts       # Dynamic leader/follower role switching
+│       ├── election.ts   # Leader election & health monitoring
+│       ├── tools.ts      # MCP tool definitions
+│       └── types.ts      # Shared types
+└── bridge/
+    ├── plugin/        # Figma plugin (TypeScript/React)
+    └── extension/     # Browser extension for the compare/verify loop
 ```
 
 ## How it works

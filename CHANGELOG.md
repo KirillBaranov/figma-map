@@ -57,7 +57,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Initial release.
-- `doctor` — verify the figma-mcp-bridge, headless Chrome, Storybook, and API key.
+- `doctor` — verify the figma-bridge backend, headless Chrome, Storybook, and API key.
 - `scan` — screenshot Storybook stories into a code-component catalog
   (chromedp), resolving each component's real import from its story source.
 - `bind` — match Figma component sections to the catalog with a vision LLM and

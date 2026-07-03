@@ -14,7 +14,7 @@ import (
 // figma-map.yaml; the API key is intentionally absent and sourced from the
 // environment via APIKey().
 type Config struct {
-	// Bridge is the base URL of the running figma-mcp-bridge HTTP RPC server.
+	// Bridge is the base URL of the running figma-bridge HTTP RPC server.
 	Bridge string `yaml:"bridge"`
 	// Storybook is the base URL of a running Storybook instance.
 	Storybook string `yaml:"storybook"`

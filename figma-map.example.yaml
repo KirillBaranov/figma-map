@@ -2,7 +2,7 @@
 # The API key is NOT stored here — it is read from the environment variable
 # named by llm.apiKeyEnv (default OPENAI_API_KEY).
 
-# figma-mcp-bridge HTTP RPC server.
+# figma-bridge HTTP RPC server (backend/).
 bridge: http://localhost:1994
 
 # Running Storybook instance.
