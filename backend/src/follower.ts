@@ -1,16 +1,20 @@
 import type { BridgeResponse, ConnectedFile, RPCRequest, RPCResponse } from "./types.js";
 
+/** Must match the `API` prefix the leader's HTTP server listens on (see leader.ts). */
+const API_PREFIX = "/api/v1";
+
+const RPC_TIMEOUT_MS = 35_000;
+const LIST_FILES_TIMEOUT_MS = 5_000;
+const PING_TIMEOUT_MS = 2_000;
+
 /**
- * Follower proxies MCP tool calls to the leader via HTTP /rpc.
+ * Speaks for a follower process: every tool call is shipped to whichever
+ * process currently holds the leader port, over its HTTP RPC endpoint.
  */
 export class Follower {
-  constructor(private leaderUrl: string) {}
+  constructor(private readonly leaderBaseUrl: string) {}
 
-  send(
-    requestType: string,
-    nodeIds?: string[],
-    fileKey?: string
-  ): Promise<BridgeResponse> {
+  send(requestType: string, nodeIds?: string[], fileKey?: string): Promise<BridgeResponse> {
     return this.sendWithParams(requestType, nodeIds, undefined, fileKey);
   }
 
@@ -20,63 +24,47 @@ export class Follower {
     params?: Record<string, unknown>,
     fileKey?: string
   ): Promise<BridgeResponse> {
-    const rpcReq: RPCRequest = { tool: requestType };
-    if (nodeIds && nodeIds.length > 0) rpcReq.nodeIds = nodeIds;
-    if (params && Object.keys(params).length > 0) rpcReq.params = params;
-    if (fileKey) rpcReq.fileKey = fileKey;
+    const payload: RPCRequest = { tool: requestType };
+    if (nodeIds && nodeIds.length > 0) payload.nodeIds = nodeIds;
+    if (params && Object.keys(params).length > 0) payload.params = params;
+    if (fileKey) payload.fileKey = fileKey;
 
-    const response = await fetch(`${this.leaderUrl}/rpc`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(rpcReq),
-      signal: AbortSignal.timeout(35_000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Leader returned status ${response.status}`);
-    }
-
-    const rpcResp = (await response.json()) as RPCResponse;
-
-    if (rpcResp.error) {
-      throw new Error(rpcResp.error);
-    }
-
-    return {
-      type: requestType,
-      requestId: "",
-      data: rpcResp.data,
-    };
+    const data = await this.postRpc(payload, RPC_TIMEOUT_MS);
+    return { type: requestType, requestId: "", data };
   }
 
   async listConnectedFiles(): Promise<ConnectedFile[]> {
-    const response = await fetch(`${this.leaderUrl}/rpc`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool: "list_files" } as RPCRequest),
-      signal: AbortSignal.timeout(5_000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Leader returned status ${response.status}`);
-    }
-
-    const rpcResp = (await response.json()) as RPCResponse;
-    if (rpcResp.error) {
-      throw new Error(rpcResp.error);
-    }
-
-    return (rpcResp.data as ConnectedFile[]) ?? [];
+    const data = await this.postRpc({ tool: "list_files" }, LIST_FILES_TIMEOUT_MS);
+    return (data as ConnectedFile[]) ?? [];
   }
 
   async ping(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.leaderUrl}/ping`, {
-        signal: AbortSignal.timeout(2_000),
+      const res = await fetch(`${this.leaderBaseUrl}/ping`, {
+        signal: AbortSignal.timeout(PING_TIMEOUT_MS),
       });
-      return response.ok;
+      return res.ok;
     } catch {
       return false;
     }
+  }
+
+  private async postRpc(payload: RPCRequest, timeoutMs: number): Promise<unknown> {
+    const res = await fetch(`${this.leaderBaseUrl}${API_PREFIX}/rpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Leader returned status ${res.status}`);
+    }
+
+    const parsed = (await res.json()) as RPCResponse;
+    if (parsed.error) {
+      throw new Error(parsed.error);
+    }
+    return parsed.data;
   }
 }
