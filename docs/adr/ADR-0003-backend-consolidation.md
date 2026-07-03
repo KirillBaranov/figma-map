@@ -121,3 +121,8 @@ build on.
 - This does not change ADR-0001's "dumb tool" stance: adding persistence and
   a real API surface to `backend` is about *where data lives*, not about the
   tool starting to guess or own the agent's loop.
+
+**Amendment (2026-07-03):** the "mechanical follow-up" from §1 (renaming
+`bridge/plugin`/`bridge/extension`) happened — see
+[ADR-0004](ADR-0004-extensions-layout.md). `backend/`'s own location is
+unaffected and stands as decided above.

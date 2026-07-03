@@ -134,7 +134,15 @@ becomes view-only.
   extension does not have this constraint — a future decision to repackage
   it as its own product (tracked separately, not decided by this ADR) would
   not reintroduce wire-protocol drift.
-- Fork attribution (`bridge/NOTICE.md`) stays regardless of how much of
-  `bridge/plugin`/`bridge/server` has since diverged — MIT requires it, and
+- Fork attribution stays regardless of how much of `bridge/plugin`/
+  `bridge/server` has since diverged — MIT requires it, and
   `election.ts`/`follower.ts`/`node.ts`/`index.ts` are still verbatim
   upstream today.
+
+**Amendment (2026-07-03):** `bridge/plugin` and `bridge/extension` moved to
+`extensions/plugin` and `extensions/browser`; `bridge/server` had already
+moved to top-level `backend/` per ADR-0003. Fork attribution was re-scoped
+to `backend/NOTICE.md` and `extensions/plugin/NOTICE.md` specifically —
+`extensions/browser/` (this ADR's `bridge/extension`) was already correctly
+identified above as carrying zero upstream code. See
+[ADR-0004](ADR-0004-extensions-layout.md).
