@@ -3,7 +3,7 @@ import { sendExtensionMessage, type CompareHistoryEntryData, type CompareSession
 export type CompareState = CompareSessionData;
 export type { CompareHistoryEntryData };
 
-// Single source of truth lives on the bridge (bridge/server/src/compareSession.ts),
+// Single source of truth lives on the backend (backend/src/compareSession.ts),
 // not chrome.storage.local — the extension only ever reads/writes it through
 // the background worker, same reasoning as lib/status.ts's getStatus().
 export async function saveCompareState(state: CompareState): Promise<void> {

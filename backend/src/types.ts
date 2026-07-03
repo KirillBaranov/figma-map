@@ -30,7 +30,7 @@ export enum Role {
 }
 
 // --- Shared wire contract (ADR-0003 §2/§3: canonical source for the
-// backend's HTTP API. bridge/extension/src/protocol.ts mirrors these shapes
+// backend's HTTP API. extensions/browser/src/protocol.ts mirrors these shapes
 // as its own zod schemas — see that file for why it isn't a direct
 // cross-package import.) ---
 

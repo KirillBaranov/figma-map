@@ -1,7 +1,7 @@
 // --- Wire types the bridge server / extension / Go client all agree on.
 // Field names here are the actual JSON contract — don't rename them without
 // updating every consumer (backend/src/types.ts's RPCResponse payloads,
-// internal/figma in Go, bridge/extension's background.ts). ---
+// internal/figma in Go, extensions/browser's background.ts). ---
 
 type PaintSolid = {
   type: "SOLID";

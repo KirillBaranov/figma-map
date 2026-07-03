@@ -133,7 +133,7 @@ Or download a prebuilt archive from the
 |---|---|
 | **Google Chrome / Chromium** | headless screenshots of Storybook stories |
 | **Storybook 7+** running | exposes the `index.json` story manifest |
-| **backend + bridge/plugin running** | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix backend run build && node backend/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `bridge/plugin/manifest.json`) |
+| **backend + extensions/plugin running** | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix backend run build && node backend/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `extensions/plugin/manifest.json`) |
 | **OpenAI-compatible vision endpoint + key** | matching and prop inference (works with OpenAI, a local Ollama/llava server, or any compatible gateway via `llm.baseURL`) |
 
 ## Quick start
@@ -273,9 +273,9 @@ internal/
 backend/             leader/election relay + persistent data plane (:1994) —
                      /rpc for CLI/MCP, /issues + /compare-session for the
                      extension, persisted to ~/.figma-map/backend/*.json
-bridge/
+extensions/
   plugin/            sandboxed JS inside Figma — node/style/variable serialization
-  extension/         browser extension — flags live-page issues, links them to a Figma node
+  browser/           browser extension — flags live-page issues, links them to a Figma node
 ```
 
 Each operation is declared once in `internal/op`; the CLI subcommand and the MCP
@@ -301,8 +301,8 @@ flowchart LR
     MCP["figma-map mcp (stdio)"] --> SVC
     SVC["internal/service"] -->|HTTP POST /rpc| Backend
     Backend["backend\n(:1994 — HTTP + WebSocket)"] <-->|WebSocket| Plugin
-    Plugin["bridge/plugin\n(sandboxed JS inside Figma)"] --> Doc[("the open Figma file")]
-    Ext["bridge/extension\n(content script on the live page)"] -->|HTTP /issues| Backend
+    Plugin["extensions/plugin\n(sandboxed JS inside Figma)"] --> Doc[("the open Figma file")]
+    Ext["extensions/browser\n(content script on the live page)"] -->|HTTP /issues| Backend
 ```
 
 `capture issues` / `capture ack` (CLI/MCP) read that same inbox — a human flags

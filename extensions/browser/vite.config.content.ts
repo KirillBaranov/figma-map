@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 // Content scripts can't load separate chunks/CSS files via <link>/import maps,
 // so this bundles React + the kit + the overlay CSS (inlined as a string,
-// see content/index.tsx) into one IIFE — the same approach bridge/plugin uses
+// see content/index.tsx) into one IIFE — the same approach extensions/plugin uses
 // for its main-thread bundle (vite.config.main.ts).
 export default defineConfig({
   plugins: [react()],

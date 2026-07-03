@@ -2,7 +2,7 @@
 
 Instructions for Claude Code working in this repo.
 
-## Reloading `bridge/extension` without asking the user
+## Reloading `extensions/browser` without asking the user
 
 The unpacked Chrome extension can be reloaded from the agent side after a
 rebuild — no manual `chrome://extensions` click needed, except once to
@@ -23,7 +23,7 @@ that's a built-in method requiring no special permission (unlike
 ```bash
 cd backend && npm run build
 # restart the running backend process so the new server code is live
-cd bridge/extension && npm run build
+cd extensions/browser && npm run build
 curl -s -X POST http://localhost:1994/extension/reload
 ```
 Wait ~30-60s, then refresh whatever test tab you're using (already-open tabs

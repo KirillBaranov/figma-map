@@ -1,5 +1,5 @@
 /* Shared design tokens for the extension's three surfaces (popup, options,
-   in-page overlay). Mirrors the Figma plugin's UI language (bridge/plugin/src/ui/index.css)
+   in-page overlay). Mirrors the Figma plugin's UI language (extensions/plugin/src/ui/index.css)
    so the whole "figma-map" family looks like one product. */
 
 :root,
