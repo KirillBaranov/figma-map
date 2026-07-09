@@ -42,23 +42,30 @@ plugin connected; that shows as its own failing check, not a generic
 running. A `figma-map.binding.yaml` + `catalog/` must exist (created once by
 `setup scan` then `setup bind`); if missing, ask the user to run them.
 
-The bridge is a separate Node process + a Figma plugin — not something this
-binary starts for you, and not part of *this* project's own code even when
-`figma-map` is being used from inside it. It lives in the `figma-map` source
-repo (wherever the user cloned/pulled it — check with them if you don't
-already know the path), listens on **`:1994`** by default (the `bridge:` URL
-in `figma-map.yaml` must match), and needs two things running before any
-`figma`/`build`/`verify` call will work:
+The bridge is a separate Node process + a Figma plugin — not part of *this*
+project's own code even when `figma-map` is being used from inside it. It
+lives in the `figma-map` source repo (wherever the user cloned/pulled it —
+check with them if you don't already know the path), listens on **`:1994`**
+by default (the `bridge:` URL in `figma-map.yaml` must match), and needs two
+things running before any `figma`/`build`/`verify` call will work:
 
-```bash
-# from the figma-map repo (not necessarily this project):
-npm --prefix backend run build && node backend/dist/index.js
-```
+1. **The backend process.** Try **`bridge up`** first (ungrouped, no group
+   prefix) — it pings the configured bridge URL, does nothing if something's
+   already there, otherwise builds and starts the backend for you and reports
+   back once it's actually answering. It needs to know where the figma-map
+   repo is: pass `--repo <path>`, or use it without a flag if `bridgeRepo` is
+   already set in `figma-map.yaml`. If neither is set, it errors with exactly
+   what to do — ask the user for the repo path once, or fall back to running
+   it by hand: `npm --prefix backend run build && node backend/dist/index.js`
+   from that repo. `bridge status`/`bridge down` check/stop it the same way.
+2. **The Figma plugin**, in Figma itself: **Plugins → Development → Import
+   plugin from manifest**, pointing at `extensions/plugin/manifest.json` in
+   that same repo, run against the open design. `bridge up` can't do this
+   part — it's a one-time manual step per Figma session, same as opening the
+   file itself.
 
-then, in Figma itself: **Plugins → Development → Import plugin from manifest**,
-pointing at `extensions/plugin/manifest.json` in that same repo, and run it
-against the open design. If `doctor` fails on the bridge/plugin checks below,
-this is the step to check first — don't assume a code bug.
+If `doctor` fails on the bridge/plugin checks below, these are the two
+things to check first — don't assume a code bug.
 
 No node id yet? Call **`figma pages`** first — file name + page list, no tree,
 no styles. Then **`figma find`**/**`figma inspect`** to drill in.
@@ -88,9 +95,9 @@ react accordingly instead of guessing or giving up.
   two separate checks on purpose, because they look identical to a human but
   need different fixes:
   - `figma bridge unreachable — restart it: cd backend && node dist/index.js`
-    — the backend process itself isn't running. Start it from the figma-map
-    repo per "Before you start" above (`npm --prefix backend run build &&
-    node backend/dist/index.js`) before retrying anything.
+    — the backend process itself isn't running. Run **`bridge up`** (with
+    `--repo` if `bridgeRepo` isn't set) before retrying anything — see
+    "Before you start" above.
   - `bridge is up but no Figma file is connected — open the file and run the
     plugin in Figma (Plugins → Development)` — the backend is fine; the
     Figma plugin just isn't running in a tab yet, or the tab was closed.
@@ -107,13 +114,17 @@ react accordingly instead of guessing or giving up.
 - **`Port 1994 already in use` / a stale backend process** — only one
   backend process can hold the bridge port; a leftover process from a
   previous run (crashed agent session, forgotten background job) can block
-  a fresh one from starting. Find and replace it rather than assuming the
-  port itself is broken:
+  a fresh one from starting. `bridge down` (stops what `bridge up` started,
+  by its recorded pid) then `bridge up` again is the clean way to replace
+  it. If that process wasn't started by `bridge up` (no pidfile — e.g. a
+  human ran it by hand), find and stop it manually instead:
   ```bash
   lsof -nP -iTCP:1994 -sTCP:LISTEN   # find the PID holding it
   kill <pid>
-  node backend/dist/index.js &       # restart, from the figma-map repo
   ```
+  then `bridge up` (or `node backend/dist/index.js &` from the figma-map
+  repo) to start a fresh one. Either way, don't assume the port itself is
+  broken.
 - Don't loop blindly retrying a failing call more than once. The bridge
   already retries transient network blips internally and invisibly — if an
   error still reaches you, retrying the identical call without addressing
