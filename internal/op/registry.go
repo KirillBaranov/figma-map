@@ -90,9 +90,9 @@ var doctorOp = Op[doctorIn, service.Report]{
 // ---- scan ----
 
 type scanIn struct {
-	Storybook string `json:"storybook" jsonschema:"Storybook base URL (default from config)"`
-	Project   string `json:"project" jsonschema:"project root with *.stories source files" default:"."`
-	Out       string `json:"out" jsonschema:"output catalog directory" default:"catalog"`
+	Storybook string `json:"storybook,omitempty" jsonschema:"Storybook base URL (default from config)"`
+	Project   string `json:"project,omitempty" jsonschema:"project root with *.stories source files" default:"."`
+	Out       string `json:"out,omitempty" jsonschema:"output catalog directory" default:"catalog"`
 }
 
 var scanOp = Op[scanIn, service.ScanResult]{
@@ -110,9 +110,9 @@ var scanOp = Op[scanIn, service.ScanResult]{
 // ---- bind ----
 
 type bindIn struct {
-	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Catalog string `json:"catalog" jsonschema:"catalog directory from scan" default:"catalog"`
-	Out     string `json:"out" jsonschema:"output binding file" default:"figma-map.binding.yaml"`
+	File    string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Catalog string `json:"catalog,omitempty" jsonschema:"catalog directory from scan" default:"catalog"`
+	Out     string `json:"out,omitempty" jsonschema:"output binding file" default:"figma-map.binding.yaml"`
 }
 
 var bindOp = Op[bindIn, service.BindResult]{
@@ -134,7 +134,7 @@ var bindOp = Op[bindIn, service.BindResult]{
 // ---- list ----
 
 type listIn struct {
-	Binding string `json:"binding" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
+	Binding string `json:"binding,omitempty" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
 }
 
 var listOp = Op[listIn, service.ListResult]{
@@ -165,9 +165,9 @@ var listOp = Op[listIn, service.ListResult]{
 
 type mapIn struct {
 	NodeID  string `json:"nodeId" jsonschema:"Figma node id to map" cli:"arg"`
-	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Binding string `json:"binding" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
-	Catalog string `json:"catalog" jsonschema:"catalog directory from scan" default:"catalog"`
+	File    string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Binding string `json:"binding,omitempty" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
+	Catalog string `json:"catalog,omitempty" jsonschema:"catalog directory from scan" default:"catalog"`
 }
 
 var mapOp = Op[mapIn, service.MapResult]{
@@ -186,7 +186,7 @@ var mapOp = Op[mapIn, service.MapResult]{
 
 type tokensIn struct {
 	NodeID string `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
-	File   string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	File   string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
 }
 
 var tokensOp = Op[tokensIn, service.TokensResult]{
@@ -207,7 +207,7 @@ var tokensOp = Op[tokensIn, service.TokensResult]{
 // ---- variables ----
 
 type variablesIn struct {
-	File string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	File string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
 }
 
 var variablesOp = Op[variablesIn, service.VariablesResult]{
@@ -239,7 +239,7 @@ var variablesOp = Op[variablesIn, service.VariablesResult]{
 // ---- pages ----
 
 type pagesIn struct {
-	File string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	File string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
 }
 
 var pagesOp = Op[pagesIn, service.PagesResult]{
@@ -270,9 +270,9 @@ var pagesOp = Op[pagesIn, service.PagesResult]{
 
 type inspectIn struct {
 	NodeID string `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
-	File   string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Tokens bool   `json:"tokens" jsonschema:"include design tokens per node"`
-	Depth  int    `json:"depth" jsonschema:"max tree depth (0 = unlimited)" default:"0"`
+	File   string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Tokens bool   `json:"tokens,omitempty" jsonschema:"include design tokens per node"`
+	Depth  int    `json:"depth,omitempty" jsonschema:"max tree depth (0 = unlimited)" default:"0"`
 }
 
 var inspectOp = Op[inspectIn, service.InspectResult]{
@@ -299,7 +299,7 @@ var inspectOp = Op[inspectIn, service.InspectResult]{
 // ---- selection ----
 
 type selectionIn struct {
-	File string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
+	File string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
 }
 
 var selectionOp = Op[selectionIn, service.SelectionResult]{
@@ -328,10 +328,10 @@ var selectionOp = Op[selectionIn, service.SelectionResult]{
 
 type renderIn struct {
 	NodeID string  `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
-	File   string  `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Out    string  `json:"out" jsonschema:"output PNG path; default: .figma-map/out/<nodeId>-render.png"`
-	Scale  float64 `json:"scale" jsonschema:"export scale factor" default:"1"`
-	Inline bool    `json:"inline" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
+	File   string  `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Out    string  `json:"out,omitempty" jsonschema:"output PNG path; default: .figma-map/out/<nodeId>-render.png"`
+	Scale  float64 `json:"scale,omitempty" jsonschema:"export scale factor" default:"1"`
+	Inline bool    `json:"inline,omitempty" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
 }
 
 var renderOp = Op[renderIn, service.RenderResult]{
@@ -359,10 +359,10 @@ var renderOp = Op[renderIn, service.RenderResult]{
 
 type screenshotIn struct {
 	NodeID string  `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
-	File   string  `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Out    string  `json:"out" jsonschema:"output PNG path; default: .figma-map/out/<nodeId>-screenshot.png"`
-	Scale  float64 `json:"scale" jsonschema:"export scale factor" default:"2"`
-	Inline bool    `json:"inline" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
+	File   string  `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Out    string  `json:"out,omitempty" jsonschema:"output PNG path; default: .figma-map/out/<nodeId>-screenshot.png"`
+	Scale  float64 `json:"scale,omitempty" jsonschema:"export scale factor" default:"2"`
+	Inline bool    `json:"inline,omitempty" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
 }
 
 var screenshotOp = Op[screenshotIn, service.ScreenshotResult]{
@@ -387,9 +387,9 @@ var screenshotOp = Op[screenshotIn, service.ScreenshotResult]{
 
 type exportIn struct {
 	NodeID string `json:"nodeId" jsonschema:"Figma node id to export" cli:"arg"`
-	File   string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Format string `json:"format" jsonschema:"PNG, SVG, or JPG" default:"SVG"`
-	Out    string `json:"out" jsonschema:"output directory" default:"assets"`
+	File   string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Format string `json:"format,omitempty" jsonschema:"PNG, SVG, or JPG" default:"SVG"`
+	Out    string `json:"out,omitempty" jsonschema:"output directory" default:"assets"`
 }
 
 var exportAssetsOp = Op[exportIn, service.ExportResult]{
@@ -408,10 +408,10 @@ var exportAssetsOp = Op[exportIn, service.ExportResult]{
 
 type planIn struct {
 	NodeID  string `json:"nodeId" jsonschema:"Figma frame node id to map" cli:"arg"`
-	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Depth   int    `json:"depth" jsonschema:"max nesting depth to search (0 = unlimited)" default:"0"`
-	Binding string `json:"binding" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
-	Catalog string `json:"catalog" jsonschema:"catalog directory from scan" default:"catalog"`
+	File    string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Depth   int    `json:"depth,omitempty" jsonschema:"max nesting depth to search (0 = unlimited)" default:"0"`
+	Binding string `json:"binding,omitempty" jsonschema:"binding file from bind" default:"figma-map.binding.yaml"`
+	Catalog string `json:"catalog,omitempty" jsonschema:"catalog directory from scan" default:"catalog"`
 }
 
 var planOp = Op[planIn, service.Plan]{
@@ -445,8 +445,8 @@ var planOp = Op[planIn, service.Plan]{
 
 type codegenIn struct {
 	NodeID  string `json:"nodeId" jsonschema:"Figma node id of the frame to generate code for" cli:"arg"`
-	File    string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Binding string `json:"binding" jsonschema:"binding file for UIKit component mapping" default:"figma-map.binding.yaml"`
+	File    string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Binding string `json:"binding,omitempty" jsonschema:"binding file for UIKit component mapping" default:"figma-map.binding.yaml"`
 }
 
 var codegenOp = Op[codegenIn, service.CodegenResult]{
@@ -470,11 +470,11 @@ var codegenOp = Op[codegenIn, service.CodegenResult]{
 
 type reconcileIn struct {
 	NodeID   string `json:"nodeId" jsonschema:"Figma node id to reconcile against" cli:"arg"`
-	File     string `json:"file" jsonschema:"Figma file key (default: config or sole connected file)"`
-	Story    string `json:"story" jsonschema:"Storybook story id rendering the implementation"`
-	URL      string `json:"url" jsonschema:"URL rendering the implementation (alternative to story)"`
-	Image    string `json:"image" jsonschema:"flat image path (no-DOM fallback, Tier 2 only)"`
-	Semantic bool   `json:"semantic" jsonschema:"also run the Tier-2 semantic LLM check"`
+	File     string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+	Story    string `json:"story,omitempty" jsonschema:"Storybook story id rendering the implementation"`
+	URL      string `json:"url,omitempty" jsonschema:"URL rendering the implementation (alternative to story)"`
+	Image    string `json:"image,omitempty" jsonschema:"flat image path (no-DOM fallback, Tier 2 only)"`
+	Semantic bool   `json:"semantic,omitempty" jsonschema:"also run the Tier-2 semantic LLM check"`
 }
 
 var reconcileOp = Op[reconcileIn, service.Diff]{
@@ -587,12 +587,12 @@ func elementsWith(els []service.ElementDiff, advisory bool) []service.ElementDif
 
 type pixelDiffIn struct {
 	NodeID    string  `json:"nodeId"    jsonschema:"Figma node id of the frame to compare" cli:"arg"`
-	URL       string  `json:"url"       jsonschema:"rendered implementation to compare against: http(s):// URL, a local HTML file path, or omit to diff against figma-map's own raw codegen render"`
-	File      string  `json:"file"      jsonschema:"Figma file key (default: config or sole connected file)"`
-	Threshold float64 `json:"threshold" jsonschema:"max diff% before match=false (default 5)" default:"5"`
-	ColorTol  int     `json:"colorTol"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
-	DiffOut   string  `json:"diffOut"   jsonschema:"path to write annotated diff PNG (optional)"`
-	GridSize  int     `json:"gridSize"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
+	URL       string  `json:"url,omitempty"       jsonschema:"rendered implementation to compare against: http(s):// URL, a local HTML file path, or omit to diff against figma-map's own raw codegen render"`
+	File      string  `json:"file,omitempty"      jsonschema:"Figma file key (default: config or sole connected file)"`
+	Threshold float64 `json:"threshold,omitempty" jsonschema:"max diff% before match=false (default 5)" default:"5"`
+	ColorTol  int     `json:"colorTol,omitempty"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
+	DiffOut   string  `json:"diffOut,omitempty"   jsonschema:"path to write annotated diff PNG (optional)"`
+	GridSize  int     `json:"gridSize,omitempty"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
 }
 
 var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
@@ -647,10 +647,10 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 type pixelDiffImagesIn struct {
 	Image1    string  `json:"image1"    jsonschema:"first image: a local file path, a data:image/...;base64,... URI, or a bare base64 PNG string" cli:"arg"`
 	Image2    string  `json:"image2"    jsonschema:"second image: a local file path, a data:image/...;base64,... URI, or a bare base64 PNG string" cli:"arg"`
-	Threshold float64 `json:"threshold" jsonschema:"max diff% before match=false (default 5)" default:"5"`
-	ColorTol  int     `json:"colorTol"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
-	DiffOut   string  `json:"diffOut"   jsonschema:"path to write annotated diff PNG (optional)"`
-	GridSize  int     `json:"gridSize"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
+	Threshold float64 `json:"threshold,omitempty" jsonschema:"max diff% before match=false (default 5)" default:"5"`
+	ColorTol  int     `json:"colorTol,omitempty"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
+	DiffOut   string  `json:"diffOut,omitempty"   jsonschema:"path to write annotated diff PNG (optional)"`
+	GridSize  int     `json:"gridSize,omitempty"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
 }
 
 var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
@@ -739,7 +739,7 @@ func loadImageInput(input string) ([]byte, error) {
 // --- capture issues / ack ---
 
 type captureIssuesIn struct {
-	File string `json:"file" jsonschema:"Figma file key to filter by (default: all)"`
+	File string `json:"file,omitempty" jsonschema:"Figma file key to filter by (default: all)"`
 }
 
 var captureIssuesOp = Op[captureIssuesIn, service.IssuesResult]{
@@ -795,13 +795,13 @@ var captureAckOp = Op[captureAckIn, service.AckResult]{
 
 type findIn struct {
 	Query      string `json:"query"      jsonschema:"text to search in node names (case-insensitive)" cli:"arg"`
-	Text       string `json:"text"       jsonschema:"filter: node must contain this text (TEXT nodes)"`
-	Type       string `json:"type"       jsonschema:"filter: Figma node type, e.g. FRAME, TEXT, INSTANCE"`
-	Mode       string `json:"mode"       jsonschema:"filter: variable mode override value, e.g. Dark, Light, Compact"`
-	Within     string `json:"within"     jsonschema:"restrict search to a specific node subtree (node id)"`
-	Depth      int    `json:"depth"      jsonschema:"max nesting depth to fetch within --within's subtree (0 = unlimited); lower this if a large section times out"`
-	File       string `json:"file"       jsonschema:"Figma file key (default: config or sole connected file)"`
-	MaxResults int    `json:"maxResults" jsonschema:"max nodes to return (default 50)" default:"50"`
+	Text       string `json:"text,omitempty"       jsonschema:"filter: node must contain this text (TEXT nodes)"`
+	Type       string `json:"type,omitempty"       jsonschema:"filter: Figma node type, e.g. FRAME, TEXT, INSTANCE"`
+	Mode       string `json:"mode,omitempty"       jsonschema:"filter: variable mode override value, e.g. Dark, Light, Compact"`
+	Within     string `json:"within,omitempty"     jsonschema:"restrict search to a specific node subtree (node id)"`
+	Depth      int    `json:"depth,omitempty"      jsonschema:"max nesting depth to fetch within --within's subtree (0 = unlimited); lower this if a large section times out"`
+	File       string `json:"file,omitempty"       jsonschema:"Figma file key (default: config or sole connected file)"`
+	MaxResults int    `json:"maxResults,omitempty" jsonschema:"max nodes to return (default 50)" default:"50"`
 }
 
 var findOp = Op[findIn, service.FindResults]{

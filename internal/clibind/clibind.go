@@ -79,6 +79,72 @@ func Register(cmd *cobra.Command, ptr any) (apply func(args []string) error, err
 	return apply, nil
 }
 
+// ApplyDefaults sets every non-positional field still at its Go zero value to
+// its `default` tag, parsed to the field's type. It mirrors the defaulting
+// cobra does for flags (via registerFlag) so the MCP path — which unmarshals
+// JSON straight into the struct with no cobra involved — behaves the same as
+// the CLI when a caller omits an optional field, instead of silently passing
+// through "" (or 0/false) that most service functions never re-default.
+func ApplyDefaults(ptr any) error {
+	v := reflect.ValueOf(ptr)
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("clibind: ptr must be a pointer to struct, got %T", ptr)
+	}
+	sv := v.Elem()
+	st := sv.Type()
+
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		if !f.IsExported() || f.Tag.Get("cli") == "arg" {
+			continue
+		}
+		name := jsonName(f)
+		if name == "" || name == "-" {
+			continue
+		}
+		def := f.Tag.Get("default")
+		if def == "" {
+			continue
+		}
+		fv := sv.Field(i)
+		if !fv.IsZero() {
+			continue
+		}
+		if err := setDefault(fv, def); err != nil {
+			return fmt.Errorf("clibind: field %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func setDefault(fv reflect.Value, def string) error {
+	switch fv.Kind() {
+	case reflect.String:
+		fv.SetString(def)
+	case reflect.Bool:
+		d, err := parseBool(def)
+		if err != nil {
+			return err
+		}
+		fv.SetBool(d)
+	case reflect.Int:
+		d, err := parseInt(def)
+		if err != nil {
+			return err
+		}
+		fv.SetInt(int64(d))
+	case reflect.Float64:
+		d, err := parseFloat(def)
+		if err != nil {
+			return err
+		}
+		fv.SetFloat(d)
+	default:
+		return fmt.Errorf("unsupported kind %s", fv.Kind())
+	}
+	return nil
+}
+
 // registerFlag adds a single cobra flag bound to the struct field fv.
 func registerFlag(cmd *cobra.Command, fv reflect.Value, name, usage, def string) error {
 	switch fv.Kind() {

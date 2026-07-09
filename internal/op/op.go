@@ -146,6 +146,14 @@ func (o Op[In, Out]) AddCLI(parent *cobra.Command, get func() *service.Service) 
 func (o Op[In, Out]) AddMCP(srv *mcp.Server, svc *service.Service) {
 	mcp.AddTool(srv, &mcp.Tool{Name: o.mcpName(), Description: o.Summary},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+			// The CLI gets its `default` tag values from cobra flag defaults
+			// (clibind.Register); MCP unmarshals JSON straight into `in` with
+			// no such step, so a caller omitting an optional field would
+			// otherwise get a raw Go zero value instead of the documented
+			// default. Apply the same tag here so both surfaces agree.
+			if err := clibind.ApplyDefaults(&in); err != nil {
+				return nil, *new(Out), err
+			}
 			out, err := o.Run(ctx, svc, in)
 			if err != nil {
 				return nil, out, err
