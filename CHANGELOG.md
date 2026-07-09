@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-10
+
+### Added
+
+- **`bridge up`/`bridge down`/`bridge status`** — start, stop, and check the
+  local backend process instead of always requiring a manual `npm --prefix
+  backend run build && node backend/dist/index.js`. `up` pings the
+  configured bridge URL first and does nothing if something's already
+  there (never starts a second copy), otherwise builds it if
+  `backend/dist/index.js` doesn't exist yet and spawns it detached so it
+  survives this process exiting, polling `/ping` until it's actually
+  reachable. `down` stops what `up` started, via a recorded pidfile;
+  `status` reports reachability plus that pid and its log path. All three
+  are also MCP tools (`bridge_up`/`bridge_down`/`bridge_status`), so an
+  agent can start the backend itself instead of asking a human to run a
+  shell command. New `bridgeRepo` config field points `up` at the
+  figma-map source checkout without needing `--repo` on every call.
+  Deliberately not a supervisor: no auto-restart, no health-monitoring
+  loop — `doctor`/`bridge status` stay the only source of truth for
+  whether it's actually up.
+
+### Changed
+
+- Skill (`.claude/skills/figma-map/SKILL.md`) now points at `bridge up`
+  as the first thing to try when the backend isn't running, instead of
+  the manual build/start commands (still documented as the fallback when
+  `bridgeRepo` isn't configured).
+
 ## [0.3.0] - 2026-07-10
 
 ### Added
@@ -162,6 +190,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - One-line `install.sh` with OS/arch detection and SHA-256 verification.
 - CI (build, test, vet, lint) and GoReleaser-based release pipeline.
 
+[0.4.0]: https://github.com/KirillBaranov/figma-map/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/KirillBaranov/figma-map/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/KirillBaranov/figma-map/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KirillBaranov/figma-map/releases/tag/v0.1.0
