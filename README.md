@@ -186,7 +186,8 @@ Or download a prebuilt archive from the
 ## Quick start
 
 ```bash
-cp figma-map.example.yaml figma-map.yaml      # adjust URLs if needed
+figma-map init /path/to/your/project          # skill, figma-map.yaml, MCP registration, CLAUDE.md
+cd /path/to/your/project                      # (or pass no path to pick one interactively)
 export OPENAI_API_KEY=sk-...
 
 figma-map doctor                              # verify bridge, chrome, storybook, key
@@ -202,6 +203,14 @@ figma-map setup bind
 # 3. Generate code for any Figma node.
 figma-map build map 13:1077
 ```
+
+`init` never clobbers what's already there — it prints exactly what it's
+about to create/change and asks for confirmation first (`-y` to skip that for
+scripts), skips `figma-map.yaml` if one already exists, and only touches
+`CLAUDE.md`/`.mcp.json` inside a delimited section it can safely re-run
+later. Skipping it, `cp figma-map.example.yaml figma-map.yaml` still works
+exactly as before — `init` is a shortcut for that plus the skill/MCP wiring,
+not a replacement for the config format.
 
 ## Commands
 
@@ -229,6 +238,7 @@ a flat `group_verb` MCP tool name (e.g. `figma_find`) for agents.
 | | `setup bind` | Match Figma sections to the catalog + infer prop schemas | ✓ once |
 | | `setup components` | List the components in a binding | — |
 | — | `figma-map mcp` | Run as an MCP server over stdio (for agents) | — |
+| — | `figma-map init [path]` | Scaffold the skill, config, and MCP registration into a project | — |
 
 Pass `--file <fileKey>` to any command when multiple Figma files are connected,
 and `--json` for machine-readable output. Run `figma-map <group> <command> --help`
@@ -236,12 +246,15 @@ for full flags.
 
 ## MCP integration
 
-Every command in the table above is also an **MCP tool** (same names, same
-parameters): the CLI and the MCP server are generated from one registry, so
-they never drift. This is what lets an agent drive the whole loop above
-itself, tool call by tool call.
+Every command in the table above except `mcp` and `init` itself is also an
+**MCP tool** (same names, same parameters): the CLI and the MCP server are
+generated from one shared registry, so they never drift. This is what lets
+an agent drive the whole loop above itself, tool call by tool call.
 
-Configure your agent (Claude Code, Cursor, …):
+`figma-map init <path>` writes this registration into the target project's
+`.mcp.json` for you (merged in, not overwriting any other servers already
+configured there). To configure it by hand instead — or for an agent whose
+config lives somewhere other than `.mcp.json` (Claude Code, Cursor, …):
 
 ```json
 { "mcpServers": { "figma-map": { "command": "figma-map", "args": ["mcp"] } } }
