@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"embed"
 	"fmt"
 
 	"github.com/kirillbaranov/figma-map/internal/config"
@@ -21,7 +22,7 @@ type BuildInfo struct {
 	Date    string
 }
 
-func newRootCmd(info BuildInfo) *cobra.Command {
+func newRootCmd(info BuildInfo, assets embed.FS) *cobra.Command {
 	var svc *service.Service
 
 	root := &cobra.Command{
@@ -54,11 +55,12 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 		o.AddCLI(root, get)
 	}
 	root.AddCommand(newMCPCmd(get))
+	root.AddCommand(newInitCmd(get, assets))
 
 	return root
 }
 
 // Execute runs the root command.
-func Execute(info BuildInfo) error {
-	return newRootCmd(info).Execute()
+func Execute(info BuildInfo, assets embed.FS) error {
+	return newRootCmd(info, assets).Execute()
 }

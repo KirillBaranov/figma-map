@@ -185,6 +185,8 @@ main() {
 
 	printf '\n%sNext:%s run %sfigma-map doctor%s to verify your setup.\n' \
 		"$BOLD" "$RESET" "$CYAN" "$RESET"
+	printf '%sThen:%s run %sfigma-map init <path>%s to add the Claude Code skill + config to your project.\n' \
+		"$BOLD" "$RESET" "$CYAN" "$RESET"
 }
 
 main "$@"

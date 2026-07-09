@@ -17,7 +17,7 @@ var (
 )
 
 func main() {
-	if err := cmd.Execute(cmd.BuildInfo{Version: version, Commit: commit, Date: date}); err != nil {
+	if err := cmd.Execute(cmd.BuildInfo{Version: version, Commit: commit, Date: date}, Assets); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
