@@ -4,6 +4,11 @@ import {
   resolveVariantModes,
   resolveMainComponentName,
   createVariableCache,
+  createConcurrencyPool,
+  CHUNK_CHILD_THRESHOLD,
+  type ConcurrencyPool,
+  type StreamSink,
+  type VariableCache,
 } from "./serializer";
 import pkg from "../../package.json";
 
@@ -80,6 +85,9 @@ type ServerRequest = {
 type PluginResponse = {
   type: RequestType;
   requestId: string;
+  kind?: "ack" | "progress" | "final";
+  done?: number;
+  total?: number;
   data?: unknown;
   error?: string;
 };
@@ -333,14 +341,91 @@ function requireDesignEditor(toolName: RequestType): void {
 // dispatcher below wraps it in the {type, requestId, data|error} envelope
 // and is the single place errors are caught. ---
 
+// Wires a request's chunk emission back over the bridge — see
+// serializer.ts's StreamSink and backend/src/types.ts's BridgeResponse for
+// what path/containerType/count mean on the wire. Marks the request as
+// "streamed" the moment the root (path: []) goes out, which is how the
+// dispatcher below knows to send a bare final marker instead of an inline
+// response — no per-request-type special-casing needed anywhere.
+function makeStreamSink(type: string, requestId: string): StreamSink {
+  return {
+    path: [],
+    emit(path, data, containerType, count) {
+      if (path.length === 0) streamedThisRequest.add(requestId);
+      figma.ui.postMessage({
+        type,
+        requestId,
+        kind: "chunk",
+        path,
+        data,
+        containerType,
+        count,
+      });
+    },
+  };
+}
+
+// Decides, once, whether a single top-level item is worth streaming at all:
+// below CHUNK_CHILD_THRESHOLD direct children it's built and emitted as one
+// combined chunk, exactly like the pre-streaming code path — zero overhead
+// for the common case. At/above threshold, it's handed a StreamSink, and
+// from then on serializeNode splits every level with children unconditionally
+// (see serializer.ts), so a lopsided subtree further down still gets fully
+// covered, not just this item's own immediate children.
+async function streamOrInline(
+  node: SceneNode,
+  depth: number | undefined,
+  cache: VariableCache,
+  pool: ConcurrencyPool,
+  emit: StreamSink["emit"],
+  path: number[]
+): Promise<void> {
+  const childCount = "children" in node ? node.children.filter((c) => c.visible !== false).length : 0;
+  if (childCount > CHUNK_CHILD_THRESHOLD) {
+    await serializeNode(node, depth, 0, cache, false, pool, { emit, path });
+    return;
+  }
+  const data = await serializeNode(node, depth, 0, cache, false, pool);
+  emit(path, data);
+}
+
 async function handleGetDocument(request: ServerRequest) {
   const depth = typeof request.params?.depth === "number" ? request.params.depth : undefined;
-  return serializeNode(figma.currentPage as unknown as SceneNode, depth);
+  const pool = createConcurrencyPool();
+  activePools.set(request.requestId, pool);
+  try {
+    await streamOrInline(
+      figma.currentPage as unknown as SceneNode,
+      depth,
+      createVariableCache(),
+      pool,
+      makeStreamSink(request.type, request.requestId).emit,
+      []
+    );
+  } finally {
+    activePools.delete(request.requestId);
+  }
+  return undefined;
 }
 
 async function handleGetSelection(request: ServerRequest) {
   const depth = typeof request.params?.depth === "number" ? request.params.depth : undefined;
-  return Promise.all(figma.currentPage.selection.map((node) => serializeNode(node, depth)));
+  const nodes = figma.currentPage.selection;
+  const pool = createConcurrencyPool();
+  activePools.set(request.requestId, pool);
+  const emit = makeStreamSink(request.type, request.requestId).emit;
+  try {
+    // The selection itself isn't a real Figma node, so it's streamed as a
+    // synthetic array container: one chunk announcing "array of N", then
+    // each selected node under its own path index.
+    emit([], undefined, "array", nodes.length);
+    await Promise.all(
+      nodes.map((node, i) => streamOrInline(node, depth, createVariableCache(), pool, emit, [i]))
+    );
+  } finally {
+    activePools.delete(request.requestId);
+  }
+  return undefined;
 }
 
 async function handleGetNode(request: ServerRequest) {
@@ -683,7 +768,51 @@ async function exportOneNode(node: SceneNode, format: ExportFormat, scale: numbe
 
   // If the node has no background fill, export the nearest ancestor that
   // does and report crop coordinates so the caller can slice the right region.
-  const backgroundAncestor = findThemeRootFrame(node);
+  let backgroundAncestor = findThemeRootFrame(node);
+
+  // exportTarget may be an ancestor several levels above `node` (see above).
+  // Its render includes every sibling stacked along that path — a badge or
+  // label sitting next to `node` inside the same frame gets composited into
+  // the crop even though it's outside `node`'s own bounds. Hide everything
+  // off the ancestor->node path for the duration of the export so the crop
+  // only ever contains `node` itself (plus the ancestor's own background,
+  // which is the reason we exported the ancestor in the first place).
+  //
+  // Hiding a sibling is a document mutation, which throws "read-only" when
+  // the plugin only has Viewer access (same restriction as the variable-mode
+  // propagation above). In that case there's no way to isolate `node` inside
+  // the ancestor's render, and exporting the ancestor unmodified would just
+  // reproduce the sibling-bleed bug — so drop back to exporting `node`
+  // directly instead. Its own fills (e.g. an image fill) don't depend on
+  // page-level variable modes anyway, so this is a safe fallback.
+  const hiddenSiblings: Array<{ n: SceneNode; visible: boolean }> = [];
+  if (backgroundAncestor) {
+    try {
+      let cursor: BaseNode = node;
+      while (cursor !== backgroundAncestor) {
+        const parent = cursor.parent as BaseNode;
+        if ("children" in parent) {
+          for (const sibling of (parent as ChildrenMixin).children) {
+            if (sibling !== cursor && "visible" in sibling && sibling.visible) {
+              const prevVisible = sibling.visible;
+              (sibling as SceneNode).visible = false;
+              // Only recorded once the mutation actually succeeded — if this
+              // throws (read-only), nothing needs restoring for it below.
+              hiddenSiblings.push({ n: sibling as SceneNode, visible: prevVisible });
+            }
+          }
+        }
+        cursor = parent;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("read-only")) throw err;
+      for (const { n, visible } of hiddenSiblings) n.visible = visible;
+      hiddenSiblings.length = 0;
+      backgroundAncestor = null;
+    }
+  }
+
   const exportTarget: SceneNode = backgroundAncestor ?? node;
 
   let cropX: number | undefined;
@@ -703,6 +832,9 @@ async function exportOneNode(node: SceneNode, format: ExportFormat, scale: numbe
   try {
     bytes = await exportTarget.exportAsync(settings);
   } finally {
+    for (const { n, visible } of hiddenSiblings) {
+      n.visible = visible;
+    }
     for (const { collection, modeId } of savedModes) {
       if (modeId === null) {
         page.clearExplicitVariableModeForCollection(collection);
@@ -1516,7 +1648,41 @@ const HANDLERS: { [K in RequestType]: (request: ServerRequest) => Promise<unknow
   delete_nodes: handleDeleteNodes,
 };
 
+// Cache of recently-answered requestIds so a retried request (backend
+// resending after a lost ack) replays the cached result instead of
+// re-running a possibly non-idempotent handler (e.g. delete_nodes).
+const RESPONSE_CACHE_LIMIT = 50;
+const responseCache = new Map<string, PluginResponse>();
+
+// requestIds the backend has already given up on ("cancel" message) — lets
+// an in-flight handler stop early (via its ConcurrencyPool) and skip
+// sending further heartbeat/final traffic nobody's listening for anymore.
+const abandonedRequestIds = new Set<string>();
+// Pools for currently-running handlers that support early cancellation,
+// keyed by requestId (only handlers whose work is worth cutting short
+// register one — currently get_selection/get_document).
+const activePools = new Map<string, ConcurrencyPool>();
+
+// requestIds whose handler emitted at least one chunk (path: []) — set by
+// makeStreamSink. Tells the dispatcher to send a bare final marker instead
+// of the generic inline response, and tells handleRequest not to bother
+// caching a value that's already `undefined` (the real data went out via
+// chunks, not the return value). No request-type list anywhere: purely a
+// runtime signal from whichever handler actually streamed.
+const streamedThisRequest = new Set<string>();
+
+function cacheResponse(response: PluginResponse): void {
+  responseCache.set(response.requestId, response);
+  if (responseCache.size > RESPONSE_CACHE_LIMIT) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest != undefined) responseCache.delete(oldest);
+  }
+}
+
 async function handleRequest(request: ServerRequest): Promise<PluginResponse> {
+  const cached = responseCache.get(request.requestId);
+  if (cached) return cached;
+
   try {
     if (EDIT_REQUEST_TYPES.has(request.type)) {
       requireDesignEditor(request.type);
@@ -1524,9 +1690,17 @@ async function handleRequest(request: ServerRequest): Promise<PluginResponse> {
     const handler = HANDLERS[request.type];
     if (!handler) throw new Error(`Unknown request type: ${request.type}`);
     const data = await handler(request);
-    return { type: request.type, requestId: request.requestId, data };
+    const response: PluginResponse = { type: request.type, requestId: request.requestId, data };
+    if (!streamedThisRequest.has(request.requestId)) cacheResponse(response);
+    return response;
   } catch (error) {
-    return { type: request.type, requestId: request.requestId, error: error instanceof Error ? error.message : String(error) };
+    const response: PluginResponse = {
+      type: request.type,
+      requestId: request.requestId,
+      error: error instanceof Error ? error.message : String(error),
+    };
+    if (!streamedThisRequest.has(request.requestId)) cacheResponse(response);
+    return response;
   }
 }
 
@@ -1544,7 +1718,51 @@ figma.ui.onmessage = async (message) => {
   }
 
   if (message.type === "server-request") {
-    const response = await handleRequest(message.payload as ServerRequest);
+    const req = message.payload as Omit<ServerRequest, "type"> & { type: string };
+
+    // The backend already gave up on this requestId (its own timeout fired)
+    // and doesn't want the result anymore — stop any in-flight work for it
+    // (via its registered pool, if any) instead of letting it grind on and
+    // compete with new requests for the plugin's single JS thread.
+    if (req.type === "cancel") {
+      abandonedRequestIds.add(req.requestId);
+      activePools.get(req.requestId)?.cancel();
+      return;
+    }
+
+    // Sent before any async work — proves a live plugin actually received
+    // the message, so the backend can tell "unresponsive" from "working".
+    figma.ui.postMessage({ type: req.type, requestId: req.requestId, kind: "ack" });
+    // Generic liveness heartbeat for the whole handler run, independent of
+    // whatever internal shape the work has (a single huge frame's recursive
+    // serialization reports no per-node progress of its own, e.g.) — keeps
+    // the backend's inactivity timer resetting as long as we're still on
+    // the main thread actually working, not just for chunked handlers.
+    const heartbeat = setInterval(() => {
+      if (abandonedRequestIds.has(req.requestId)) {
+        clearInterval(heartbeat);
+        return;
+      }
+      figma.ui.postMessage({ type: req.type, requestId: req.requestId, kind: "progress" });
+    }, 4_000);
+    let response: PluginResponse;
+    try {
+      response = await handleRequest(req as ServerRequest);
+    } finally {
+      clearInterval(heartbeat);
+    }
+    if (abandonedRequestIds.delete(req.requestId)) return;
+    if (streamedThisRequest.delete(req.requestId)) {
+      // The handler already sent its data as chunks — a bare final (or, on
+      // error, one carrying just the error) tells the backend there's
+      // nothing more coming rather than resending everything inline.
+      figma.ui.postMessage(
+        response.error
+          ? { type: response.type, requestId: response.requestId, error: response.error }
+          : { type: response.type, requestId: response.requestId }
+      );
+      return;
+    }
     try {
       figma.ui.postMessage(response);
     } catch (err) {

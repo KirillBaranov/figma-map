@@ -187,27 +187,150 @@ function serializeStops(
 export type VariableCache = {
   variables: Map<string, Promise<Variable | null>>;
   collections: Map<string, Promise<VariableCollection | null>>;
+  // See DEV_RESOURCE_BUDGET below — shared across one whole-tree walk the
+  // same way variables/collections are, so the cap applies per walk, not
+  // per node.
+  devResourceBudget: { remaining: number };
 };
 
+// getDevResourcesAsync hits Figma's real REST API (Dev Resources, "Tier 2"),
+// rate-limited as low as 5/min (View/Collab seats) to 100/min (Org, Dev/Full
+// seats) — see https://developers.figma.com/docs/rest-api/rate-limits/.
+// devResourcesOf used to call it unconditionally for every node in Dev Mode;
+// a whole-page walk with thousands of nodes blows through that budget in
+// seconds and Figma starts failing every plugin API call with "Unable to
+// establish connection to Figma", not just the REST calls. Capping how many
+// a single walk will ever make trades completeness (a handful of deep
+// nodes' dev resources go unreported) for never taking down the rest of the
+// request over an enrichment field most callers don't even use.
+const DEV_RESOURCE_BUDGET = 15;
+
 export function createVariableCache(): VariableCache {
-  return { variables: new Map(), collections: new Map() };
+  return {
+    variables: new Map(),
+    collections: new Map(),
+    devResourceBudget: { remaining: DEV_RESOURCE_BUDGET },
+  };
 }
 
-function cachedVariable(cache: VariableCache, id: string): Promise<Variable | null> {
+// Bounds how many serializeNode calls run concurrently during one whole-tree
+// walk. Figma's async node APIs (loadFontAsync, getDevResourcesAsync, style/
+// variable resolution) round-trip through the same internal channel our own
+// heartbeat's figma.ui.postMessage uses — fanning out an unbounded
+// Promise.all over a large subtree can flood that channel badly enough that
+// even a setInterval heartbeat misses its turn, making a merely-slow request
+// look "hung" to the backend. This caps concurrency and self-tunes the cap
+// from measured queue wait time (back off hard when callers are queuing,
+// creep back up when slots are granted immediately), and periodically
+// forces a real event-loop yield so queued postMessage traffic always gets
+// scheduled.
+export class ConcurrencyPool {
+  private limit = 24;
+  private readonly minLimit = 8;
+  private readonly maxLimit = 48;
+  private active = 0;
+  private queue: (() => void)[] = [];
+  private acquisitions = 0;
+  private cancelled = false;
+
+  // Called when the backend has already given up on the request this pool
+  // belongs to (see code.ts's "cancel" handling) — stops handing out new
+  // work so an abandoned tree walk unwinds quickly instead of running to
+  // completion for no one.
+  cancel(): void {
+    this.cancelled = true;
+  }
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.cancelled) throw new Error("cancelled");
+    // Measure how long *acquiring a slot* took, not how long `fn` itself
+    // runs — `fn` here recurses into the child's whole subtree (nested
+    // pool.run calls for grandchildren), so its duration reflects subtree
+    // size, not contention. Queue wait time is the real backpressure
+    // signal: it's high exactly when too much work is already in flight,
+    // regardless of how big any one branch happens to be.
+    const waitStart = Date.now();
+    await this.acquire();
+    const waitedMs = Date.now() - waitStart;
+    try {
+      return await fn();
+    } finally {
+      this.release(waitedMs);
+    }
+  }
+
+  private async acquire(): Promise<void> {
+    this.acquisitions++;
+    if (this.acquisitions % 8 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (this.cancelled) throw new Error("cancelled");
+    if (this.active < this.limit) {
+      this.active++;
+      return;
+    }
+    await new Promise<void>((resolve) => this.queue.push(resolve));
+    if (this.cancelled) throw new Error("cancelled");
+    this.active++;
+  }
+
+  private release(waitedMs: number): void {
+    this.active--;
+    // A caller stuck waiting for a slot means we're over-subscribed — back
+    // off. A slot granted essentially immediately means there's headroom —
+    // creep up. Immediate grants (waitedMs === 0, the common un-congested
+    // case) intentionally don't also grow the limit on every single
+    // release — only a queued caller that got in fast enough tells us
+    // there's spare capacity worth adding.
+    if (waitedMs > 200) {
+      this.limit = Math.max(this.minLimit, Math.floor(this.limit * 0.8));
+    } else if (waitedMs > 0 && waitedMs < 5) {
+      this.limit = Math.min(this.maxLimit, this.limit + 1);
+    }
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+export function createConcurrencyPool(): ConcurrencyPool {
+  return new ConcurrencyPool();
+}
+
+// One doorway for every real network-backed Figma call made during a
+// tree walk (library variable/collection resolution, dev resources — any
+// future one too) — route it here instead of calling the `figma.*Async`
+// API directly. `pool`, when given, bounds it alongside node-level
+// concurrency: a design-system file can have hundreds of *distinct*
+// library variables or dev-resource-bearing nodes, and fanning all of
+// those real network calls out unbounded (one per paint per node, across
+// however many nodes the pool is already running concurrently) is exactly
+// what caused Figma itself to start failing with "Unable to establish
+// connection" during testing. `pool` is optional so callers with none in
+// scope (e.g. find_nodes) keep today's unbounded behavior unchanged.
+function boundedNetworkCall<T>(pool: ConcurrencyPool | undefined, fn: () => Promise<T>): Promise<T> {
+  return pool ? pool.run(fn) : fn();
+}
+
+function cachedVariable(
+  cache: VariableCache,
+  id: string,
+  pool?: ConcurrencyPool
+): Promise<Variable | null> {
   const existing = cache.variables.get(id);
   if (existing) return existing;
-  const pending = figma.variables.getVariableByIdAsync(id);
+  const pending = boundedNetworkCall(pool, () => figma.variables.getVariableByIdAsync(id));
   cache.variables.set(id, pending);
   return pending;
 }
 
 function cachedCollection(
   cache: VariableCache,
-  id: string
+  id: string,
+  pool?: ConcurrencyPool
 ): Promise<VariableCollection | null> {
   const existing = cache.collections.get(id);
   if (existing) return existing;
-  const pending = figma.variables.getVariableCollectionByIdAsync(id);
+  const pending = boundedNetworkCall(pool, () => figma.variables.getVariableCollectionByIdAsync(id));
   cache.collections.set(id, pending);
   return pending;
 }
@@ -216,15 +339,16 @@ function cachedCollection(
 // Returns null if the chain doesn't resolve to a COLOR variable.
 async function followColorAlias(
   alias: VariableAlias,
-  cache: VariableCache
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<RGB | null> {
   let currentId = alias.id;
   const MAX_HOPS = 8;
   for (let hop = 0; hop < MAX_HOPS; hop++) {
-    const variable = await cachedVariable(cache, currentId);
+    const variable = await cachedVariable(cache, currentId, pool);
     if (!variable || variable.resolvedType !== "COLOR") return null;
 
-    const collection = await cachedCollection(cache, variable.variableCollectionId);
+    const collection = await cachedCollection(cache, variable.variableCollectionId, pool);
     const modeId = collection?.defaultModeId ?? Object.keys(variable.valuesByMode)[0];
     if (!modeId) return null;
 
@@ -255,11 +379,12 @@ type VariableLabel = {
 // from whatever value it ultimately resolves to.
 async function labelForVariable(
   id: string,
-  cache: VariableCache
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<VariableLabel | undefined> {
-  const variable = await cachedVariable(cache, id);
+  const variable = await cachedVariable(cache, id, pool);
   if (!variable) return undefined;
-  const collection = await cachedCollection(cache, variable.variableCollectionId);
+  const collection = await cachedCollection(cache, variable.variableCollectionId, pool);
   return {
     label: collection ? `${collection.name}/${variable.name}` : variable.name,
     codeSyntax: variable.codeSyntax?.WEB,
@@ -268,7 +393,8 @@ async function labelForVariable(
 
 async function serializePaint(
   paint: Paint,
-  cache: VariableCache
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<SerializedPaint | undefined> {
   switch (paint.type) {
     case "SOLID": {
@@ -278,9 +404,9 @@ async function serializePaint(
       if (colorAlias) {
         // paint.color can hold the pre-binding default rather than the
         // value actually resolved for the current mode, so re-resolve it.
-        const aliasedColor = await followColorAlias(colorAlias, cache);
+        const aliasedColor = await followColorAlias(colorAlias, cache, pool);
         if (aliasedColor) resolvedColor = aliasedColor;
-        variableLabel = await labelForVariable(colorAlias.id, cache);
+        variableLabel = await labelForVariable(colorAlias.id, cache, pool);
       }
       return {
         type: "SOLID",
@@ -315,13 +441,14 @@ async function serializePaint(
 
 async function serializePaintList(
   paints: readonly Paint[] | symbol | undefined,
-  cache: VariableCache
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<SerializedPaint[] | "mixed"> {
   if (isSymbol(paints)) return "mixed";
   if (!paints || !Array.isArray(paints)) return [];
 
   const visible = paints.filter((p) => p.visible !== false);
-  const serialized = await Promise.all(visible.map((p) => serializePaint(p, cache)));
+  const serialized = await Promise.all(visible.map((p) => serializePaint(p, cache, pool)));
   return serialized.filter((p): p is SerializedPaint => p !== undefined);
 }
 
@@ -442,15 +569,19 @@ function uniformOrPerSide(top: number, right: number, bottom: number, left: numb
     : { top, right, bottom, left };
 }
 
-async function baseStylesFor(node: SceneNode, cache: VariableCache): Promise<SerializedStyles> {
+async function baseStylesFor(
+  node: SceneNode,
+  cache: VariableCache,
+  pool?: ConcurrencyPool
+): Promise<SerializedStyles> {
   const styles: SerializedStyles = {};
 
   if ("opacity" in node) styles.opacity = node.opacity as number;
   if ("blendMode" in node) styles.blendMode = node.blendMode as string;
   if ("visible" in node) styles.visible = node.visible;
 
-  if ("fills" in node) styles.fills = await serializePaintList(node.fills, cache);
-  if ("strokes" in node) styles.strokes = await serializePaintList(node.strokes, cache);
+  if ("fills" in node) styles.fills = await serializePaintList(node.fills, cache, pool);
+  if ("strokes" in node) styles.strokes = await serializePaintList(node.strokes, cache, pool);
   if ("strokeWeight" in node) {
     styles.strokeWeight = isSymbol(node.strokeWeight)
       ? "mixed"
@@ -533,7 +664,7 @@ async function baseStylesFor(node: SceneNode, cache: VariableCache): Promise<Ser
     styles.layoutAlign = "STRETCH";
   }
 
-  const boundVariables = await boundVariableLabels(node, cache);
+  const boundVariables = await boundVariableLabels(node, cache, pool);
   if (boundVariables) styles.boundVariables = boundVariables;
 
   return styles;
@@ -554,7 +685,8 @@ const NON_SCALAR_BOUND_FIELDS = new Set([
 
 async function boundVariableLabels(
   node: SceneNode,
-  cache: VariableCache
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<Record<string, string> | undefined> {
   if (!("boundVariables" in node) || !node.boundVariables) return undefined;
 
@@ -564,7 +696,7 @@ async function boundVariableLabels(
     if (!binding || Array.isArray(binding) || typeof binding !== "object") continue;
     const alias = binding as VariableAlias;
     if (alias.type !== "VARIABLE_ALIAS") continue;
-    const resolved = await labelForVariable(alias.id, cache);
+    const resolved = await labelForVariable(alias.id, cache, pool);
     if (resolved) result[field] = resolved.label;
   }
   return Object.keys(result).length > 0 ? result : undefined;
@@ -575,7 +707,8 @@ async function boundVariableLabels(
 // can resolve this only for nodes that already passed a cheap sync filter.
 export async function resolveVariantModes(
   node: SceneNode,
-  cache: VariableCache
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<Record<string, string> | undefined> {
   if (!("explicitVariableModes" in node)) return undefined;
   const raw = node.explicitVariableModes as Record<string, string>;
@@ -583,7 +716,7 @@ export async function resolveVariantModes(
 
   const result: Record<string, string> = {};
   for (const [collectionId, modeId] of Object.entries(raw)) {
-    const collection = await cachedCollection(cache, collectionId);
+    const collection = await cachedCollection(cache, collectionId, pool);
     const mode = collection?.modes.find((m) => m.modeId === modeId);
     if (mode) result[collection!.name] = mode.name;
   }
@@ -682,7 +815,9 @@ function exportSettingsOf(node: SceneNode): ExportPreset[] | undefined {
 
 // Designer-attached dev resource links, fetched lazily.
 async function devResourcesOf(
-  node: SceneNode
+  node: SceneNode,
+  cache: VariableCache,
+  pool?: ConcurrencyPool
 ): Promise<{ name: string; url: string }[] | undefined> {
   // getDevResourcesAsync hits Figma's related_links REST endpoint — a real
   // network call, not local document data. Dev Resources are a Dev Mode
@@ -691,13 +826,16 @@ async function devResourcesOf(
   // network round-trip per node on a field nobody in Design mode asked for.
   if (figma.editorType !== "dev") return undefined;
   if (!("getDevResourcesAsync" in node)) return undefined;
+  // See DEV_RESOURCE_BUDGET's comment — bounds real REST calls per walk.
+  if (cache.devResourceBudget.remaining <= 0) return undefined;
+  cache.devResourceBudget.remaining--;
 
   let resources: Awaited<ReturnType<typeof node.getDevResourcesAsync>>;
   try {
     // Can reject for reasons unrelated to the node (e.g. 403 on an unsaved/
     // duplicated file) — optional enrichment, so don't fail the rest of an
     // otherwise-successful response over it.
-    resources = await node.getDevResourcesAsync();
+    resources = await boundedNetworkCall(pool, () => node.getDevResourcesAsync());
   } catch {
     return undefined;
   }
@@ -730,22 +868,62 @@ function leanBase(node: SceneNode): SerializedNode {
   return { id: node.id, name: node.name, type: node.type, bounds: nodeBounds(node) };
 }
 
-async function fullBase(node: SceneNode, cache: VariableCache): Promise<SerializedNode> {
+async function fullBase(
+  node: SceneNode,
+  cache: VariableCache,
+  pool?: ConcurrencyPool
+): Promise<SerializedNode> {
   return {
     id: node.id,
     name: node.name,
     type: node.type,
     bounds: nodeBounds(node),
-    styles: await baseStylesFor(node, cache),
+    styles: await baseStylesFor(node, cache, pool),
     componentProps: resolveComponentProps(node),
-    variantModes: await resolveVariantModes(node, cache),
+    variantModes: await resolveVariantModes(node, cache, pool),
     gridPosition: gridPositionOf(node),
     reactions: reactionsOf(node),
     devStatus: "devStatus" in node ? node.devStatus?.type : undefined,
-    devResources: await devResourcesOf(node),
+    devResources: await devResourcesOf(node, cache, pool),
     annotations: annotationsOf(node),
     exportSettings: exportSettingsOf(node),
   };
+}
+
+async function serializeNodeShallow(
+  node: SceneNode,
+  cache: VariableCache,
+  lean: boolean,
+  pool?: ConcurrencyPool
+): Promise<SerializedNode> {
+  const base = lean ? leanBase(node) : await fullBase(node, cache, pool);
+  if (node.type === "TEXT" && !lean) return withTextFields(node, base);
+  return base;
+}
+
+// A root-level result can be too large to hand to figma.ui.postMessage() in
+// one call — that's a single synchronous structured-clone of the whole
+// object, and JS being single-threaded means nothing (not even our own
+// heartbeat timer) can interleave with it once it starts. Above this many
+// direct children, a node streams each child as its own postMessage instead
+// of nesting them into one in-memory/one-wire-message blob. Applied
+// recursively at every depth serializeNode visits, not just once at the
+// root, so a lopsided tree (one branch that itself fans out huge) is
+// covered too, not just a wide shallow one.
+export const CHUNK_CHILD_THRESHOLD = 20;
+
+// Where to send streamed pieces of a result and which slot in the result
+// tree they belong to. `path: []` is the root value itself; `[2, 0]` is
+// "root item 2's child 0" — purely structural addressing, see
+// backend/src/types.ts's BridgeResponse for the wire shape this feeds.
+export interface StreamSink {
+  emit: (
+    path: number[],
+    data: unknown,
+    containerType?: "object" | "array",
+    count?: number
+  ) => void;
+  path: number[];
 }
 
 // Serializes a node (and, recursively, its visible children) into the wire
@@ -756,6 +934,33 @@ async function fullBase(node: SceneNode, cache: VariableCache): Promise<Serializ
 // root. Once depth reaches maxDepth, children are reported as childCount
 // instead of walked at all: a depth limit, not depth-then-discard, so a huge
 // subtree past the limit costs nothing to serialize.
+//
+// `stream`, when provided, is strictly additive: every call site that omits
+// it (the default) gets byte-for-byte the same behavior and return value as
+// before. When present, a node whose children exceed CHUNK_CHILD_THRESHOLD
+// emits itself as a container chunk and streams each child under its own
+// path instead of returning a fully-nested value — see CHUNK_CHILD_THRESHOLD
+// above. The value goes out via `stream.emit` instead, so there's nothing
+// meaningful to return — these two overloads keep every existing call site
+// (which never passes `stream`) getting back a real `SerializedNode` as
+// before, with no `| undefined` to guard against.
+export function serializeNode(
+  node: SceneNode,
+  maxDepth?: number,
+  depth?: number,
+  cache?: VariableCache,
+  lean?: boolean,
+  pool?: ConcurrencyPool
+): Promise<SerializedNode>;
+export function serializeNode(
+  node: SceneNode,
+  maxDepth: number | undefined,
+  depth: number,
+  cache: VariableCache,
+  lean: boolean,
+  pool: ConcurrencyPool,
+  stream: StreamSink
+): Promise<undefined>;
 export async function serializeNode(
   node: SceneNode,
   maxDepth?: number,
@@ -767,24 +972,56 @@ export async function serializeNode(
   // click-to-node hit-map) never reads: no style/variable resolution, no
   // dev-resources network call, no text field serialization. Still returns
   // id/name/type/bounds/children at any depth, for a fraction of the cost.
-  lean = false
-): Promise<SerializedNode> {
-  const base = lean ? leanBase(node) : await fullBase(node, cache);
+  lean = false,
+  // Shared for one whole-tree walk, same as cache — see ConcurrencyPool above.
+  pool: ConcurrencyPool = createConcurrencyPool(),
+  stream?: StreamSink
+): Promise<SerializedNode | undefined> {
+  const base = await serializeNodeShallow(node, cache, lean, pool);
 
-  if (node.type === "TEXT" && !lean) {
-    return withTextFields(node, base);
+  if (!("children" in node)) {
+    stream?.emit(stream.path, base);
+    return stream ? undefined : base;
   }
 
-  if ("children" in node) {
-    const visibleChildren = node.children.filter((c) => c.visible !== false);
-    if (maxDepth && depth >= maxDepth) {
-      return { ...base, childCount: visibleChildren.length };
-    }
-    const children = await Promise.all(
-      visibleChildren.map((child) => serializeNode(child, maxDepth, depth + 1, cache, lean))
+  const visibleChildren = node.children.filter((c) => c.visible !== false);
+
+  if (maxDepth && depth >= maxDepth) {
+    const leaf = { ...base, childCount: visibleChildren.length };
+    stream?.emit(stream.path, leaf);
+    return stream ? undefined : leaf;
+  }
+
+  // Once inside an active stream, split *every* level that has children —
+  // not just ones whose own direct count crosses CHUNK_CHILD_THRESHOLD.
+  // Gating on direct count here would miss a lopsided tree (a small-fanout
+  // node with one descendant that itself fans out huge): that descendant
+  // would still get built as one giant in-memory value and handed to
+  // figma.ui.postMessage() in a single call, reproducing the exact bug
+  // this is meant to fix, just one level down. CHUNK_CHILD_THRESHOLD's job
+  // is only to decide, once, whether the *caller* enters streaming mode
+  // for a given top-level item — see code.ts's streamOrInline.
+  if (stream && visibleChildren.length > 0) {
+    stream.emit(stream.path, base, "object", visibleChildren.length);
+    await Promise.all(
+      visibleChildren.map((child, i) =>
+        pool.run(() =>
+          serializeNode(child, maxDepth, depth + 1, cache, lean, pool, {
+            emit: stream.emit,
+            path: [...stream.path, i],
+          })
+        )
+      )
     );
-    return { ...base, children };
+    return undefined;
   }
 
-  return base;
+  const children = await Promise.all(
+    visibleChildren.map((child) =>
+      pool.run(() => serializeNode(child, maxDepth, depth + 1, cache, lean, pool))
+    )
+  );
+  const result = { ...base, children };
+  stream?.emit(stream.path, result);
+  return stream ? undefined : result;
 }

@@ -3,7 +3,12 @@ import type { BridgeResponse, ConnectedFile, RPCRequest, RPCResponse } from "./t
 /** Must match the `API` prefix the leader's HTTP server listens on (see leader.ts). */
 const API_PREFIX = "/api/v1";
 
-const RPC_TIMEOUT_MS = 35_000;
+// Generous stopgap ceiling: the leader's own bridge now uses a sliding
+// inactivity timeout that can legitimately run past the old flat 35s for a
+// large-but-progressing selection. This doesn't make the Follower->Leader
+// hop itself progress-aware (that would need a streaming RPC), it just
+// stops it from cutting the request off before the leader's diagnosis would.
+const RPC_TIMEOUT_MS = 180_000;
 const LIST_FILES_TIMEOUT_MS = 5_000;
 const PING_TIMEOUT_MS = 2_000;
 

@@ -14,6 +14,27 @@ export interface BridgeRequest {
 export interface BridgeResponse {
   type: string;
   requestId: string;
+  // Absent (or "final") is the terminal response the request is resolved
+  // with. "ack"/"progress" are liveness signals sent while the plugin is
+  // still working — they carry no data/error and must not resolve the
+  // pending request, only reset its inactivity timer. "chunk" delivers one
+  // piece of a large result addressed by `path` (see below) instead of the
+  // whole thing at once — a "final" with no data/error then means "no more
+  // chunks, reassemble what's arrived" rather than "here's the result".
+  kind?: "ack" | "progress" | "final" | "chunk";
+  done?: number;
+  total?: number;
+  // "chunk" fields. Purely structural — the backend never needs to know
+  // what a path *means* semantically, only how to rebuild a tree from it.
+  // `path: []` is the root value itself; `[2, 0]` is "root item 2's child
+  // 0". A chunk with `containerType` set is a "shell" (a node's own fields
+  // minus `children`, or undefined for a bare array) — `count` more chunks
+  // are coming at `path.concat(0..count-1)`. A chunk without
+  // `containerType` is a complete leaf value at that path, nothing further
+  // to expect under it.
+  path?: number[];
+  containerType?: "object" | "array";
+  count?: number;
   data?: unknown;
   error?: string;
 }
