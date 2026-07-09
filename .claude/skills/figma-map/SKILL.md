@@ -42,6 +42,24 @@ plugin connected; that shows as its own failing check, not a generic
 running. A `figma-map.binding.yaml` + `catalog/` must exist (created once by
 `setup scan` then `setup bind`); if missing, ask the user to run them.
 
+The bridge is a separate Node process + a Figma plugin — not something this
+binary starts for you, and not part of *this* project's own code even when
+`figma-map` is being used from inside it. It lives in the `figma-map` source
+repo (wherever the user cloned/pulled it — check with them if you don't
+already know the path), listens on **`:1994`** by default (the `bridge:` URL
+in `figma-map.yaml` must match), and needs two things running before any
+`figma`/`build`/`verify` call will work:
+
+```bash
+# from the figma-map repo (not necessarily this project):
+npm --prefix backend run build && node backend/dist/index.js
+```
+
+then, in Figma itself: **Plugins → Development → Import plugin from manifest**,
+pointing at `extensions/plugin/manifest.json` in that same repo, and run it
+against the open design. If `doctor` fails on the bridge/plugin checks below,
+this is the step to check first — don't assume a code bug.
+
 No node id yet? Call **`figma pages`** first — file name + page list, no tree,
 no styles. Then **`figma find`**/**`figma inspect`** to drill in.
 
@@ -49,6 +67,58 @@ Deterministic operations (`doctor`, `figma tokens`, `figma inspect`,
 `capture screenshot`, `capture export`, `setup components`, `verify reconcile`
 Tier-1) need **no API key**. Only `setup bind`, `build map`, `build plan`, and
 `verify reconcile --semantic` use the LLM.
+
+## Troubleshooting: operational failures
+
+These aren't bugs in figma-map — they're the normal failure modes of driving
+a real Figma tab over a WebSocket bridge. Recognize them by message and
+react accordingly instead of guessing or giving up.
+
+- **"plugin unresponsive (no ack received — window may be unfocused or
+  suspended by Figma)"** — the single most common failure. Browsers/Figma
+  suspend JS execution in backgrounded or unfocused tabs; the bridge's
+  WebSocket connection stays open but the plugin can't respond. The bridge
+  already retries once internally before surfacing this — if you're seeing
+  it at all, the tab was unfocused for the whole retry window, not a one-off
+  blip. **Fix: ask the user to click into the Figma tab/window so it's
+  focused, then re-issue the exact same call.** Don't route around it by
+  switching to a different operation or assuming the data is wrong.
+- **`doctor` failing — read *which* check, not just that it failed.**
+  `figma bridge unreachable` and `figma plugin connected` are reported as
+  two separate checks on purpose, because they look identical to a human but
+  need different fixes:
+  - `figma bridge unreachable — restart it: cd backend && node dist/index.js`
+    — the backend process itself isn't running. Start it from the figma-map
+    repo per "Before you start" above (`npm --prefix backend run build &&
+    node backend/dist/index.js`) before retrying anything.
+  - `bridge is up but no Figma file is connected — open the file and run the
+    plugin in Figma (Plugins → Development)` — the backend is fine; the
+    Figma plugin just isn't running in a tab yet, or the tab was closed.
+    Ask the user to open the design and start the plugin, then rerun
+    `doctor`.
+  - `storybook (...)` failing is unrelated to the Figma side — only
+    `build codegen`'s live-render comparisons need it; ignore it for
+    pure `figma`/`build`/`verify reconcile` (Tier-1) work.
+- **A large `figma find`/`figma inspect` on a big page looks stuck but isn't
+  — the bridge tolerates real silence up to ~90s** (it watches for a live
+  progress heartbeat, not overall duration) before it would actually time
+  out and report a diagnosis. A long wait with no error yet is expected on
+  a large selection, not a hang to interrupt.
+- **`Port 1994 already in use` / a stale backend process** — only one
+  backend process can hold the bridge port; a leftover process from a
+  previous run (crashed agent session, forgotten background job) can block
+  a fresh one from starting. Find and replace it rather than assuming the
+  port itself is broken:
+  ```bash
+  lsof -nP -iTCP:1994 -sTCP:LISTEN   # find the PID holding it
+  kill <pid>
+  node backend/dist/index.js &       # restart, from the figma-map repo
+  ```
+- Don't loop blindly retrying a failing call more than once. The bridge
+  already retries transient network blips internally and invisibly — if an
+  error still reaches you, retrying the identical call without addressing
+  the underlying cause (focus, a dead backend, a stale port) will just fail
+  the same way again. Diagnose from the message first.
 
 ## The build loop (e.g. "build this page from frame 55:1102")
 
