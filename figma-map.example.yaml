@@ -5,6 +5,13 @@
 # figma-bridge HTTP RPC server (backend/).
 bridge: http://localhost:1994
 
+# Path to a figma-map source checkout (containing backend/ and
+# extensions/plugin/) — only needed to use `bridge up`/`bridge down`/
+# `bridge status`, which start/stop/check that backend process for you.
+# Leave empty if you start it yourself; every other command just talks to
+# whatever's already listening on `bridge` above.
+bridgeRepo: ""
+
 # Running Storybook instance.
 storybook: http://localhost:6007
 

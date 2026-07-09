@@ -150,6 +150,7 @@ func printNextSteps(target string) {
 	fmt.Println("Next:")
 	fmt.Printf("  cd %s\n", target)
 	fmt.Println("  export OPENAI_API_KEY=sk-...        # edit figma-map.yaml if the defaults don't fit")
+	fmt.Println("  figma-map bridge up --repo <path>   # start the backend (set bridgeRepo in figma-map.yaml to skip --repo)")
 	fmt.Println("  figma-map doctor                    # verify bridge, chrome, storybook, key")
 	fmt.Println("  figma-map setup scan --project .    # build the code-component catalog")
 	fmt.Println("  figma-map setup bind                # match Figma components to it")

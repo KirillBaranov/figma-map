@@ -28,6 +28,9 @@ func indentJSON(v any) string {
 func All() []Registrar {
 	return []Registrar{
 		doctorOp,
+		bridgeUpOp,
+		bridgeDownOp,
+		bridgeStatusOp,
 		scanOp,
 		bindOp,
 		listOp,
@@ -84,6 +87,77 @@ var doctorOp = Op[doctorIn, service.Report]{
 			return fmt.Errorf("one or more checks failed")
 		}
 		return nil
+	},
+}
+
+// ---- bridge up ----
+
+type bridgeUpIn struct {
+	Repo string `json:"repo,omitempty" jsonschema:"figma-map source checkout path (default: bridgeRepo in figma-map.yaml)"`
+}
+
+var bridgeUpOp = Op[bridgeUpIn, service.BridgeUpResult]{
+	Group:   "bridge",
+	Verb:    "up",
+	Summary: "Start the local backend if nothing is already listening on the configured bridge URL",
+	Long: "up pings the configured bridge URL first and does nothing if something's already " +
+		"there. Otherwise it builds backend/dist/index.js if missing (npm --prefix backend run " +
+		"build) and starts it detached from --repo (or the bridgeRepo config field), so it " +
+		"outlives this command. Never starts a second copy.",
+	Run: func(ctx context.Context, s *service.Service, in bridgeUpIn) (service.BridgeUpResult, error) {
+		return s.BridgeUp(ctx, in.Repo)
+	},
+	Render: func(r service.BridgeUpResult) string {
+		if r.AlreadyRunning {
+			return fmt.Sprintf("already running: %s", r.Bridge)
+		}
+		return fmt.Sprintf("started backend (pid %d), answering %s — log: %s", r.PID, r.Bridge, r.LogPath)
+	},
+}
+
+// ---- bridge down ----
+
+type bridgeDownIn struct{}
+
+var bridgeDownOp = Op[bridgeDownIn, service.BridgeDownResult]{
+	Group:   "bridge",
+	Verb:    "down",
+	Summary: "Stop the backend process started by a prior `bridge up`",
+	Run: func(ctx context.Context, s *service.Service, _ bridgeDownIn) (service.BridgeDownResult, error) {
+		return s.BridgeDown(ctx)
+	},
+	Render: func(r service.BridgeDownResult) string {
+		if !r.Stopped {
+			return r.Reason
+		}
+		return fmt.Sprintf("stopped pid %d", r.PID)
+	},
+}
+
+// ---- bridge status ----
+
+type bridgeStatusIn struct{}
+
+var bridgeStatusOp = Op[bridgeStatusIn, service.BridgeStatusResult]{
+	Group:   "bridge",
+	Verb:    "status",
+	Summary: "Check whether the backend is reachable, and the pid/log `bridge up` recorded for it",
+	Run: func(ctx context.Context, s *service.Service, _ bridgeStatusIn) (service.BridgeStatusResult, error) {
+		return s.BridgeStatus(ctx)
+	},
+	Render: func(r service.BridgeStatusResult) string {
+		state := "not reachable"
+		if r.Running {
+			state = "reachable"
+		}
+		s := fmt.Sprintf("%s: %s", r.Bridge, state)
+		if r.PID != 0 {
+			s += fmt.Sprintf(" (pid %d)", r.PID)
+		}
+		if r.LogPath != "" {
+			s += fmt.Sprintf(" — log: %s", r.LogPath)
+		}
+		return s
 	},
 }
 

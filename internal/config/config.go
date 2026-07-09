@@ -16,6 +16,12 @@ import (
 type Config struct {
 	// Bridge is the base URL of the running figma-bridge HTTP RPC server.
 	Bridge string `yaml:"bridge"`
+	// BridgeRepo is the path to a figma-map source checkout containing
+	// backend/ and extensions/plugin/ — where `bridge up` runs `npm
+	// --prefix backend run build && node backend/dist/index.js` from.
+	// Optional: only needed to use `bridge up/down/status`; every other
+	// operation just talks to whatever's already listening on Bridge.
+	BridgeRepo string `yaml:"bridgeRepo"`
 	// Storybook is the base URL of a running Storybook instance.
 	Storybook string `yaml:"storybook"`
 	// FileKey is the default Figma file key to operate on.

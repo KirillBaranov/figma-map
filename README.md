@@ -180,7 +180,7 @@ Or download a prebuilt archive from the
 |---|---|
 | **Google Chrome / Chromium** | headless screenshots of Storybook stories |
 | **Storybook 7+** running | exposes the `index.json` story manifest |
-| **backend + extensions/plugin running** | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — start with `npm --prefix backend run build && node backend/dist/index.js`, then load the plugin in Figma (Plugins → Development → Import from manifest, `extensions/plugin/manifest.json`) |
+| **backend + extensions/plugin running** | connects an open Figma file to a local server on `:1994`, bypassing Figma API rate limits — `figma-map bridge up --repo <path to this checkout>` builds and starts it for you (set `bridgeRepo` in `figma-map.yaml` to skip `--repo`), or run `npm --prefix backend run build && node backend/dist/index.js` by hand. Either way, still load the plugin in Figma once (Plugins → Development → Import from manifest, `extensions/plugin/manifest.json`) |
 | **OpenAI-compatible vision endpoint + key** | matching and prop inference (works with OpenAI, a local Ollama/llava server, or any compatible gateway via `llm.baseURL`) |
 
 ## Quick start
@@ -220,6 +220,9 @@ a flat `group_verb` MCP tool name (e.g. `figma_find`) for agents.
 | Group | Command | Description | Uses AI |
 |---|---|---|:---:|
 | — | `figma-map doctor` | Check bridge, Chrome, Storybook, and API key | — |
+| **bridge** (local backend process) | `bridge up [--repo]` | Start the backend if nothing's listening yet (builds it first if needed) | — |
+| | `bridge status` | Check whether the backend is reachable, and its pid/log | — |
+| | `bridge down` | Stop the backend `bridge up` started | — |
 | **figma** (read Figma ground truth) | `figma find <query>` | Search nodes by name/text/type | — |
 | | `figma inspect <nodeId>` | Node subtree: structure, text, bounds, optional `--tokens` | — |
 | | `figma selection` | Get the node(s) currently selected in the editor | — |

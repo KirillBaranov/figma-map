@@ -76,6 +76,7 @@ var groupSummaries = map[string]string{
 	"build":   "Generate code from a Figma node",
 	"verify":  "Compare generated/implemented code against Figma",
 	"setup":   "One-time project bootstrap — catalog and binding",
+	"bridge":  "Start, stop, and check the local backend + plugin bridge process",
 }
 
 // groupCommand returns parent's existing subcommand named group, creating it
