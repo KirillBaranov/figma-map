@@ -4,6 +4,98 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-10
+
+### Added
+
+- **`init`** — one-command project onboarding. Scaffolds the bundled Claude
+  Code skill, a starter `figma-map.yaml`, and figma-map's MCP server
+  registration into a target project's `.mcp.json` (merged in, existing
+  servers untouched), plus a re-runnable, delimited section in that
+  project's `CLAUDE.md`. Picks the target interactively (fuzzy-filterable)
+  or accepts a path for scripted/CI use; always previews what it's about to
+  write and asks for confirmation first (`-y` to skip, `--force` to
+  overwrite a skill file that's diverged from the bundled version).
+- **Figma REST Source** — an optional read-only backend that talks to the
+  Figma REST API directly, for ground-truth reads that don't need the
+  bridge/plugin round-trip.
+- `capture issues` / `capture ack` — an inbox of regions a human flagged via
+  the browser extension (screenshot, bounds, CSS selector, optional linked
+  Figma node, note), for pairing with `verify pixeldiff-images`.
+- `verify pixeldiff-images` — pixel diff between two already-captured
+  images directly, no Figma node lookup or browser render needed.
+- Browser extension: a bottom bar with per-window state, a per-site
+  allowlist (a small "+" by default, the full bar only on enabled sites),
+  a hover-selector overlay showing the CSS selector and size, and an
+  issue-capture history with pin/remove.
+- CSS `var()` emission for Figma Variables that carry a WEB `codeSyntax`,
+  instead of always inlining the literal value.
+- `.env` is loaded automatically for `OPENAI_API_KEY` (and other secrets) —
+  no more requiring it to be exported by hand.
+- `find`/`inspect` accept a `--depth` limit, so a large subtree that used to
+  time out can be fetched incrementally instead.
+
+### Changed
+
+- **MCP tool schemas now mark only truly-required fields as `required`.**
+  Previously every field was required in the generated schema (a JSON
+  Schema inference quirk), and worse, the MCP path never applied the same
+  `default` tag values the CLI gets from its cobra flags — an MCP caller
+  omitting an optional field like `binding`/`catalog` could hit a raw
+  `open : no such file or directory` instead of the documented default.
+  Both surfaces now agree.
+- **Large `get_document`/`get_selection` calls stream instead of blocking
+  on one flat timeout.** The bridge protocol gained ack/progress/chunk/final
+  response kinds — an ack proves the plugin got the request, a heartbeat
+  proves it's still alive, and results above a size threshold stream back
+  as path-addressed chunks reassembled on completion. A sliding inactivity
+  timer (short pre-ack, generous once progressing) plus an independent
+  stall watchdog replace the old flat 30s cutoff, and a lost ack is retried
+  once automatically. On the plugin side, a self-tuning concurrency pool
+  caps and throttles tree-serialization fan-out so the heartbeat itself
+  never gets starved by its own request's traffic.
+- Ground-truth extraction overhaul: component/prop matching now prefers
+  data read straight from Figma (instance/main-component name,
+  `componentProps`, bound-Variable `codeSyntax`) over the vision model,
+  which is now the fallback only for the one question Figma's data model
+  can't answer.
+- `backend/` (formerly `bridge/server`) promoted to a persistent leader/
+  follower backend behind `/api/v1`, with the leader-election layer and the
+  plugin's `serializer.ts`/`code.ts` rewritten to drop the vendored fork
+  dependency; `bridge/plugin` and `bridge/extension` moved to `extensions/`.
+- Rotation sign in codegen's CSS output corrected; render waits for
+  `document.fonts.ready` instead of a fixed sleep; a lean structure-only
+  serialize mode avoids fetching tokens/styles when only shape is needed.
+
+### Fixed
+
+- Plugin: exporting a node via its nearest background-filled ancestor no
+  longer bleeds sibling layers into the crop — they're hidden for the
+  duration of the export (with a fallback to exporting the node directly
+  when the plugin only has Viewer access and can't hide anything).
+- Browser extension: tooltip clipping near viewport corners, history
+  thumbnail pin/remove button offsets under a wrapped Tooltip, a missing
+  hit-map on Fetch/history load paths, text color leaking through shadow
+  DOM into the host page, and generated class names polluting the hover
+  selector.
+- golangci-lint cleanups (errcheck, revive, unused-parameter) across the Go
+  codebase.
+
+### Docs
+
+- Skill (`.claude/skills/figma-map/SKILL.md`) gained a Troubleshooting
+  section for the bridge's actual operational failure modes — an
+  unfocused/suspended Figma tab, `doctor`'s two separate bridge/plugin
+  checks, long-but-not-hung large selections, and a stale process holding
+  the bridge port — plus the concrete port (1994) and start commands,
+  instead of leaving them implicit.
+- README restructured around the agent verify loop rather than component
+  mapping, with `init` documented in Quick start, the commands table, and
+  MCP integration; ADRs added for the `extensions/` layout, ground-truth
+  extraction, and layer-boundaries.
+- A reproducible benchmark harness and head-to-head methodology against
+  the official Figma MCP.
+
 ## [0.2.0] - 2026-06-13
 
 ### Added
@@ -70,5 +162,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - One-line `install.sh` with OS/arch detection and SHA-256 verification.
 - CI (build, test, vet, lint) and GoReleaser-based release pipeline.
 
+[0.3.0]: https://github.com/KirillBaranov/figma-map/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/KirillBaranov/figma-map/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KirillBaranov/figma-map/releases/tag/v0.1.0
