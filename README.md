@@ -136,6 +136,12 @@ to pin a tag, or `FIGMA_MAP_INSTALL_DIR=~/bin` to choose the directory.
 Alternatives: `go install github.com/kirillbaranov/figma-map@latest`, or grab
 a prebuilt archive from the [releases page](https://github.com/KirillBaranov/figma-map/releases).
 
+**Updating:** once installed, `figma-map update` fetches the latest release
+for your platform, verifies its checksum, and replaces the running binary in
+place — no need to re-run the install script. `figma-map update --check`
+just reports whether a newer version exists; `figma-map update --version
+v0.6.0` pins a specific tag.
+
 ### 2. Load the bridge plugin in Figma
 
 The bridge is what lets figma-map read your open Figma file directly, with no

@@ -56,6 +56,7 @@ func newRootCmd(info BuildInfo, assets embed.FS) *cobra.Command {
 	}
 	root.AddCommand(newMCPCmd(get))
 	root.AddCommand(newInitCmd(get, assets))
+	root.AddCommand(newUpdateCmd(info))
 
 	return root
 }
