@@ -169,12 +169,17 @@ Figma-linked issue, instead of a screenshot and a paragraph of description.
 
 ### Requirements
 
-| Dependency | Why |
-|---|---|
-| **Google Chrome / Chromium** | headless screenshots of Storybook stories |
-| **Storybook 7+** running | exposes the `index.json` story manifest |
-| **Figma desktop, bridge + plugin running** (step 2 above) | connects an open Figma file to figma-map, bypassing API rate limits |
-| **OpenAI-compatible vision endpoint + key** | matching and prop inference — works with OpenAI, a local Ollama/llava server, or any compatible gateway |
+The only hard requirement is the Figma plugin (step 2 above) — everything
+else below is optional, and just means a specific feature won't work
+without it.
+
+| Dependency | Required? | Without it |
+|---|---|---|
+| **Figma desktop, bridge + plugin running** (step 2 above) | **Yes** | Nothing works — this is how figma-map reads your file at all. |
+| **Google Chrome / Chromium** | Optional | No headless rendering — `screenshot`, `verify reconcile`, and the browser-extension compare loop need it. |
+| **Storybook 7+** running | Optional | No code-component catalog — `setup scan`/`build map` (going from a Figma node to *your* JSX) need it. Reading tokens/structure straight from Figma doesn't. |
+| **OpenAI-compatible vision endpoint + key** | Optional | No component matching or prop inference — `setup bind` and the leftover-prop vision step need it (works with OpenAI, a local Ollama/llava server, or any compatible gateway). |
+| **Browser extension** (step 3 above) | Optional | No human-flagged live-page issues — everything else still works without it. |
 
 ## Quick start
 
