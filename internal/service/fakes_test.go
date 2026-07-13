@@ -27,6 +27,7 @@ type fakeSource struct {
 	variableDefs      figma.VariableDefs
 	findMatches       []figma.FindMatch
 	mainComponentName map[string]string
+	animations        map[string][]figma.Animation
 	screenshotCalls   int
 }
 
@@ -55,6 +56,9 @@ func (f *fakeSource) FindNodes(context.Context, string, figma.FindNodesOptions) 
 }
 func (f *fakeSource) MainComponentName(_ context.Context, _ string, id string) (string, error) {
 	return f.mainComponentName[id], nil
+}
+func (f *fakeSource) Animation(_ context.Context, _ string, id string) ([]figma.Animation, error) {
+	return f.animations[id], nil
 }
 func (f *fakeSource) Selection(context.Context, string) ([]figma.Node, error) { return nil, nil }
 func (f *fakeSource) Screenshot(context.Context, string, string, figma.ScreenshotOpts) ([]byte, error) {

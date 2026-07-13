@@ -385,6 +385,17 @@ func (r *RESTSource) MainComponentName(ctx context.Context, fileKey, id string) 
 	return comp.Name, nil
 }
 
+// Animation implements Source. Resolving a reaction's before/after style
+// delta needs either a live editor session (for the variant-sibling guess,
+// which the bridge's plugin runtime does inline) or meaningfully more
+// REST plumbing than figma-map's REST source currently carries (walking
+// componentSets plus a second /nodes fetch for the destination) — not worth
+// building until a REST-only workflow actually needs it. Use the bridge
+// source for `figma animation` today.
+func (r *RESTSource) Animation(_ context.Context, _, _ string) ([]Animation, error) {
+	return nil, fmt.Errorf("animation resolution is not available via the Figma REST source — use the bridge source instead")
+}
+
 type restNodesResponse struct {
 	Nodes map[string]struct {
 		Document restNode `json:"document"`

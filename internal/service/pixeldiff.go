@@ -6,11 +6,42 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/kirillbaranov/figma-map/internal/figma"
 	"github.com/kirillbaranov/figma-map/internal/render"
 )
+
+// figmaNodeIDPattern matches a bare Figma node id — "1232:33509" or an
+// instance-child id like "I1232:33509;260:2268" — as opposed to an actual
+// CSS selector. Node ids contain ':', which collides with a naive
+// "does it look like CSS" character check (':' also introduces a
+// pseudo-class), so Selector expansion matches this pattern explicitly
+// rather than guessing from punctuation.
+var figmaNodeIDPattern = regexp.MustCompile(`^I?\d+:\d+(;\d+:\d+)*$`)
+
+// resolveScreenshotTarget prepares a (url, selector) pair for
+// render.ScreenshotElement: expands a bare Figma node id into its
+// data-figma-node attribute selector, and resolves a schemeless url to a
+// file:// URL (same rule other browser-screenshot paths in this file use)
+// so a relative local HTML path works the same way with or without
+// --selector.
+func resolveScreenshotTarget(url, selector string) (targetURL, resolvedSelector string, err error) {
+	resolvedSelector = selector
+	if figmaNodeIDPattern.MatchString(selector) {
+		resolvedSelector = fmt.Sprintf(`[data-figma-node="%s"]`, selector)
+	}
+	targetURL = url
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "file://") {
+		abs, aerr := filepath.Abs(url)
+		if aerr != nil {
+			return "", "", fmt.Errorf("resolve html path %q: %w", url, aerr)
+		}
+		targetURL = "file://" + abs
+	}
+	return targetURL, resolvedSelector, nil
+}
 
 // PixelDiffResult is the result of a pixel-level screenshot comparison.
 type PixelDiffResult struct {
@@ -49,6 +80,20 @@ type PixelDiffOptions struct {
 	// GridSize buckets the comparison into a GridSize×GridSize grid for
 	// Regions. Default 4; pass a negative value to disable region computation.
 	GridSize int
+	// Selector scopes the implementation-side screenshot to one element
+	// instead of the whole viewport/page — a CSS selector, or a bare Figma
+	// node id (expanded to `[data-figma-node="<id>"]`). Lets the agent diff
+	// a section that lives mid-page (not rendered as its own isolated
+	// story/HTML) against its Figma render. Only applies to the url
+	// screenshot path; ignored when url == "" (own codegen render already
+	// renders the node in isolation).
+	Selector string
+	// Width is the browser viewport width in CSS px, used only when
+	// Selector is set. Defaults to 1280 rather than the Figma node's own
+	// width: a scoped section's layout is usually driven by the width of
+	// the page/container it lives in, not by its own size, unlike the
+	// isolated-story case which renders at exactly the node's width.
+	Width int
 }
 
 // PixelDiff takes a Figma screenshot and a browser screenshot, then compares
@@ -103,11 +148,22 @@ func (s *Service) PixelDiff(ctx context.Context, fileKey, nodeID, url string, op
 		return PixelDiffResult{}, fmt.Errorf("figma screenshot: %w", err)
 	}
 
-	// 3. Browser screenshot at the same viewport size.
+	// 3. Browser screenshot at the same viewport size (or, with a Selector,
+	// one element cropped out of a normally-sized page viewport).
 	var browserPNG []byte
 	switch {
 	case url == "":
 		browserPNG, err = render.ScreenshotHTML(previewHTML(node), w, h, opts.Scale)
+	case opts.Selector != "":
+		targetURL, selector, rerr := resolveScreenshotTarget(url, opts.Selector)
+		if rerr != nil {
+			return PixelDiffResult{}, rerr
+		}
+		vw := opts.Width
+		if vw <= 0 {
+			vw = 1280
+		}
+		browserPNG, err = render.ScreenshotElement(ctx, targetURL, selector, vw, 900, opts.Scale)
 	case strings.HasPrefix(url, "http://"), strings.HasPrefix(url, "https://"), strings.HasPrefix(url, "file://"):
 		browserPNG, err = render.ScreenshotViewport(url, w, h, opts.Scale)
 	default:

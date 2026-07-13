@@ -74,12 +74,18 @@ type ExportSetting struct {
 
 // Reaction is one prototyping reaction: what triggers it, and (when the
 // action is a NODE navigation with a transition) the transition's
-// type/easing/duration.
+// type/easing/duration/destination.
 type Reaction struct {
 	Trigger        string   `json:"trigger"`
 	TransitionType string   `json:"transitionType,omitempty"`
 	Easing         string   `json:"easing,omitempty"`
 	Duration       *float64 `json:"duration,omitempty"`
+	// DestinationID is the target node of a NODE-navigation action — cheap
+	// to carry here since it's already read off the action. Resolving what
+	// actually changes at that destination (before/after style diff) is
+	// comparatively expensive and lives behind the separate Animation op
+	// instead of running for every node a tree walk touches.
+	DestinationID string `json:"destinationId,omitempty"`
 }
 
 // File identifies a Figma file connected to the source.
@@ -202,6 +208,41 @@ type Source interface {
 	// plan's tier-1 name match), never for every INSTANCE in a bulk tree
 	// fetch.
 	MainComponentName(ctx context.Context, fileKey, id string) (string, error)
+	// Animation resolves each of a node's prototyping reactions to an actual
+	// before/after style delta (not just trigger/timing, which Node.Reactions
+	// already carries cheaply for every node). Deliberately a separate call,
+	// like MainComponentName: resolving a destination node (or guessing a
+	// state-sibling variant) and diffing full style sets is real async work
+	// that should only run for the one node an agent is actually asking about.
+	Animation(ctx context.Context, fileKey, id string) ([]Animation, error)
+}
+
+// Animation is one prototyping reaction resolved to what actually changes.
+type Animation struct {
+	Trigger        string   `json:"trigger"`
+	TransitionType string   `json:"transitionType,omitempty"`
+	Easing         string   `json:"easing,omitempty"`
+	Duration       *float64 `json:"duration,omitempty"`
+	DestinationID  string   `json:"destinationId,omitempty"`
+	// ResolvedVia is "destination" (a real NODE-navigation target — ground
+	// truth) or "variant-sibling" (no destination on the reaction itself; a
+	// same-component-set sibling was guessed from a state-sounding property
+	// name — a best-effort match, not a designer-declared one). Empty when
+	// no "after" state could be resolved at all.
+	ResolvedVia string               `json:"resolvedVia,omitempty"`
+	StyleDelta  *AnimationStyleDelta `json:"styleDelta,omitempty"`
+}
+
+// AnimationStyleDelta holds only the style keys that actually differ between
+// the reaction's "before" and "after" state, each side keyed by the same
+// normalized style field names Tokens/Style already use (opacity, fills,
+// cornerRadius, rotation, ...). Left as generic maps rather than a typed
+// struct: the set of keys present varies per node/animation, and the
+// consumer here is JSON passed straight through to the CLI/MCP caller, not
+// further Go-side logic that would benefit from static field access.
+type AnimationStyleDelta struct {
+	From map[string]any `json:"from,omitempty"`
+	To   map[string]any `json:"to,omitempty"`
 }
 
 // FindNodesOptions controls a FindNodes search.

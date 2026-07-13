@@ -125,13 +125,18 @@ type ExportPreset = {
   constraintValue?: number;
 };
 
-// One prototyping reaction. transitionType/easing/duration are only present
-// for a NODE-navigation action — real designer-set timing, not a guess.
+// One prototyping reaction. transitionType/easing/duration/destinationId are
+// only present for a NODE-navigation action — real designer-set timing (and
+// target), not a guess. destinationId is cheap to include here (already read
+// off the action, just not discarded); resolving what actually changes at
+// that destination is comparatively expensive and lives behind the separate
+// `figma animation` op instead of running on every node in a tree walk.
 type SerializedReaction = {
   trigger: string;
   transitionType?: string;
   easing?: string;
   duration?: number;
+  destinationId?: string;
 };
 
 export type SerializedNode = {
@@ -790,6 +795,7 @@ function reactionsOf(node: SceneNode): SerializedReaction[] | undefined {
       transitionType: nodeAction?.transition?.type,
       easing: nodeAction?.transition?.easing.type,
       duration: nodeAction?.transition?.duration,
+      destinationId: nodeAction?.destinationId ?? undefined,
     });
   }
   return result.length > 0 ? result : undefined;
@@ -862,6 +868,146 @@ export async function resolveMainComponentName(
     // this is an optional matching hint, not load-bearing data.
     return undefined;
   }
+}
+
+// One reaction resolved to what actually changes, for the dedicated
+// get_animation RPC — cheap trigger/timing data plus an expensive
+// before/after style diff, deliberately not part of the generic per-node
+// walk (see the comment on SerializedReaction/destinationId above).
+export type AnimationResult = {
+  trigger: string;
+  transitionType?: string;
+  easing?: string;
+  duration?: number;
+  destinationId?: string;
+  // How the "after" state was found: a real NODE-navigation destination, or
+  // (when a reaction has no destination — e.g. a same-component hover
+  // state) a same-component-set sibling variant guessed from a
+  // state-sounding property name. Lets a caller weigh confidence: a real
+  // destination is ground truth, a guessed sibling is a best-effort match.
+  resolvedVia?: "destination" | "variant-sibling";
+  styleDelta?: { from: Partial<SerializedStyles>; to: Partial<SerializedStyles> };
+};
+
+// Guess a hover/press/focus-state sibling for an INSTANCE whose reaction has
+// no explicit destination (common for a same-component state change rather
+// than a navigate-elsewhere reaction): resolve the component set the
+// instance belongs to, and look for another variant that differs from this
+// instance's own main component in exactly one property — preferring one
+// whose differing value sounds like an interaction state. Best-effort only;
+// callers get told via AnimationResult.resolvedVia that this is a guess,
+// not a designer-declared target the way destinationId is.
+async function siblingVariantByState(
+  node: InstanceNode,
+  pool?: ConcurrencyPool
+): Promise<SceneNode | null> {
+  try {
+    const main = await boundedNetworkCall(pool, () => node.getMainComponentAsync());
+    if (!main) return null;
+    const set = main.parent;
+    if (!set || set.type !== "COMPONENT_SET") return null;
+    const ownProps = main.variantProperties;
+    if (!ownProps) return null;
+
+    const stateLike = /hover|press|focus|active|selected|open|expanded/i;
+    let fallback: ComponentNode | undefined;
+    for (const child of set.children) {
+      if (child.type !== "COMPONENT" || child.id === main.id) continue;
+      const props = child.variantProperties;
+      if (!props) continue;
+      const diffKeys = Object.keys(ownProps).filter((k) => props[k] !== ownProps[k]);
+      if (diffKeys.length !== 1) continue;
+      if (stateLike.test(props[diffKeys[0]] ?? "")) return child;
+      fallback ??= child;
+    }
+    return fallback ?? null;
+  } catch {
+    // A main component/set from an unavailable/unpublished library can
+    // reject — this is a best-effort guess, not load-bearing data.
+    return null;
+  }
+}
+
+// Shallow diff of two style snapshots into { from, to }, each holding only
+// the keys that actually differ. JSON-stringify comparison is good enough
+// here: every SerializedStyles field is a small, JSON-safe value (numbers,
+// strings, or small nested objects/arrays), not something with cycles or
+// non-serializable members.
+function diffStyles(
+  from: SerializedStyles,
+  to: SerializedStyles
+): { from: Partial<SerializedStyles>; to: Partial<SerializedStyles> } | undefined {
+  const fromOut: Record<string, unknown> = {};
+  const toOut: Record<string, unknown> = {};
+  const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
+  for (const key of keys) {
+    const a = (from as Record<string, unknown>)[key];
+    const b = (to as Record<string, unknown>)[key];
+    if (JSON.stringify(a) === JSON.stringify(b)) continue;
+    if (a !== undefined) fromOut[key] = a;
+    if (b !== undefined) toOut[key] = b;
+  }
+  if (Object.keys(fromOut).length === 0 && Object.keys(toOut).length === 0) return undefined;
+  return {
+    from: fromOut as Partial<SerializedStyles>,
+    to: toOut as Partial<SerializedStyles>,
+  };
+}
+
+// Resolves each of a node's prototyping reactions to an actual before/after
+// style delta — the data a caller needs to write a real CSS transition or
+// framer-motion animation instead of just noting "this hovers". Deliberately
+// a separate, opt-in op (see get_animation in code.ts) rather than part of
+// the always-on tree walk: resolving a destination node and diffing its full
+// style set is real async work that shouldn't run for every reaction-bearing
+// node a large-file traversal happens to touch.
+export async function resolveAnimation(
+  node: SceneNode,
+  cache: VariableCache,
+  pool?: ConcurrencyPool
+): Promise<AnimationResult[] | undefined> {
+  if (!("reactions" in node) || node.reactions.length === 0) return undefined;
+
+  const results: AnimationResult[] = [];
+  for (const reaction of node.reactions) {
+    if (!reaction.trigger) continue;
+    const actions = reaction.actions ?? (reaction.action ? [reaction.action] : []);
+    const nodeAction = actions.find(
+      (a): a is Action & { type: "NODE" } => a.type === "NODE"
+    );
+
+    const entry: AnimationResult = {
+      trigger: reaction.trigger.type,
+      transitionType: nodeAction?.transition?.type,
+      easing: nodeAction?.transition?.easing.type,
+      duration: nodeAction?.transition?.duration,
+      destinationId: nodeAction?.destinationId ?? undefined,
+    };
+
+    let destination: SceneNode | null = null;
+    if (nodeAction?.destinationId) {
+      const found = await figma.getNodeByIdAsync(nodeAction.destinationId);
+      if (found && "id" in found && found.type !== "DOCUMENT" && found.type !== "PAGE") {
+        destination = found as SceneNode;
+        entry.resolvedVia = "destination";
+      }
+    }
+    if (!destination && node.type === "INSTANCE") {
+      destination = await siblingVariantByState(node as InstanceNode, pool);
+      if (destination) entry.resolvedVia = "variant-sibling";
+    }
+
+    if (destination) {
+      const [fromStyles, toStyles] = await Promise.all([
+        baseStylesFor(node, cache, pool),
+        baseStylesFor(destination, cache, pool),
+      ]);
+      entry.styleDelta = diffStyles(fromStyles, toStyles);
+    }
+
+    results.push(entry);
+  }
+  return results.length > 0 ? results : undefined;
 }
 
 function leanBase(node: SceneNode): SerializedNode {

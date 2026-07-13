@@ -35,11 +35,13 @@ func All() []Registrar {
 		bindOp,
 		listOp,
 		tokensOp,
+		animationOp,
 		variablesOp,
 		inspectOp,
 		selectionOp,
 		pagesOp,
 		screenshotOp,
+		browserScreenshotOp,
 		renderOp,
 		exportAssetsOp,
 		mapOp,
@@ -278,6 +280,37 @@ var tokensOp = Op[tokensIn, service.TokensResult]{
 	},
 }
 
+// ---- animation ----
+
+type animationIn struct {
+	NodeID string `json:"nodeId" jsonschema:"Figma node id" cli:"arg"`
+	File   string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
+}
+
+var animationOp = Op[animationIn, service.AnimationResult]{
+	Group:   "figma",
+	Verb:    "animation",
+	Summary: "Resolve a node's prototyping reactions to actual before/after style deltas",
+	Long: "figma tokens' reactions field is cheap trigger/timing data (trigger, transitionType, " +
+		"easing, duration), carried for every node in a tree walk. `figma animation` does the " +
+		"expensive part on top: resolving what actually changes. When a reaction navigates to " +
+		"another node (a real destination the designer set), it diffs that node's styles against " +
+		"this one's. When it doesn't (a same-component hover/press/focus state with no explicit " +
+		"destination), it guesses a sibling variant from the component set and says so via " +
+		"resolvedVia=\"variant-sibling\" rather than presenting a guess as ground truth. Use " +
+		"styleDelta's from/to to write a real CSS transition or framer-motion animate prop, not " +
+		"just a note that something animates.",
+	Run: func(ctx context.Context, s *service.Service, in animationIn) (service.AnimationResult, error) {
+		return s.GetAnimation(ctx, in.File, in.NodeID)
+	},
+	Render: func(r service.AnimationResult) string {
+		if len(r.Animations) == 0 {
+			return fmt.Sprintf("%s: no reactions", r.Name)
+		}
+		return fmt.Sprintf("%s:\n%s", r.Name, indentJSON(r.Animations))
+	},
+}
+
 // ---- variables ----
 
 type variablesIn struct {
@@ -453,6 +486,40 @@ var screenshotOp = Op[screenshotIn, service.ScreenshotResult]{
 		return fmt.Sprintf("wrote %s (%d×%d)", r.Path, r.Width, r.Height)
 	},
 	Image: func(r service.ScreenshotResult) ([]byte, string) {
+		return r.PNG, "image/png"
+	},
+}
+
+// ---- browser screenshot ----
+
+type browserScreenshotIn struct {
+	URL      string  `json:"url" jsonschema:"http(s):// URL, or a local HTML file path" cli:"arg"`
+	Selector string  `json:"selector,omitempty" jsonschema:"CSS selector (or a bare Figma node id, expanded to [data-figma-node=\"<id>\"]) to crop to one element instead of the whole viewport"`
+	Width    int     `json:"width,omitempty" jsonschema:"browser viewport width in CSS px (default 1280)"`
+	Scale    float64 `json:"scale,omitempty" jsonschema:"deviceScaleFactor" default:"1"`
+	Out      string  `json:"out,omitempty" jsonschema:"output PNG path; default: .figma-map/out/<selector-or-page>-browser-screenshot.png"`
+	Inline   bool    `json:"inline,omitempty" jsonschema:"also return the PNG bytes inline (MCP) instead of just the path"`
+}
+
+var browserScreenshotOp = Op[browserScreenshotIn, service.BrowserScreenshotResult]{
+	Group:   "capture",
+	Verb:    "browser",
+	Summary: "Screenshot a live URL, optionally cropped to one element",
+	Long: "Screenshots url (a dev server, Storybook iframe, or local HTML file) the same way " +
+		"`verify pixeldiff --selector` does internally, but standalone — for looking at what's " +
+		"currently rendered without comparing it against a Figma node. Without --selector, " +
+		"captures the whole viewport; with it, crops to the matching element (CSS selector or a " +
+		"bare Figma node id, expanded to [data-figma-node=\"<id>\"]) inside a normally-sized page " +
+		"viewport, so a mid-page section can be checked without setting up isolation for it. " +
+		"Always writes a PNG to --out (or a default .figma-map/out/ path) — pass --inline to " +
+		"also get the bytes back.",
+	Run: func(ctx context.Context, s *service.Service, in browserScreenshotIn) (service.BrowserScreenshotResult, error) {
+		return s.BrowserScreenshot(ctx, in.URL, in.Selector, in.Width, in.Scale, in.Out, in.Inline)
+	},
+	Render: func(r service.BrowserScreenshotResult) string {
+		return fmt.Sprintf("wrote %s (%d×%d)", r.Path, r.Width, r.Height)
+	},
+	Image: func(r service.BrowserScreenshotResult) ([]byte, string) {
 		return r.PNG, "image/png"
 	},
 }
@@ -667,6 +734,8 @@ type pixelDiffIn struct {
 	ColorTol  int     `json:"colorTol,omitempty"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
 	DiffOut   string  `json:"diffOut,omitempty"   jsonschema:"path to write annotated diff PNG (optional)"`
 	GridSize  int     `json:"gridSize,omitempty"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
+	Selector  string  `json:"selector,omitempty"  jsonschema:"CSS selector (or a bare Figma node id, expanded to [data-figma-node=\"<id>\"]) scoping the implementation screenshot to one element instead of the whole viewport — use this to diff a section that lives mid-page, not rendered as its own isolated story/HTML"`
+	Width     int     `json:"width,omitempty"     jsonschema:"browser viewport width in CSS px, only used with --selector (default 1280 — a scoped section's layout is usually driven by its page/container width, not its own size)"`
 }
 
 var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
@@ -682,7 +751,10 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 		"Storybook iframe — should render the component in isolation so both images cover the " +
 		"same region), or a local HTML file path (screenshotted directly, no server needed). " +
 		"Omit --url entirely to diff against figma-map's own raw codegen render (see `render`) — " +
-		"useful before there's a real implementation to point at.",
+		"useful before there's a real implementation to point at. " +
+		"--selector scopes the implementation screenshot to one element (CSS selector or bare " +
+		"Figma node id) instead of the whole viewport, so a section that lives mid-page can be " +
+		"diffed without setting up isolation for it first.",
 	Run: func(ctx context.Context, s *service.Service, in pixelDiffIn) (service.PixelDiffResult, error) {
 		return s.PixelDiff(ctx, in.File, in.NodeID, in.URL, service.PixelDiffOptions{
 			Threshold: in.Threshold,
@@ -690,6 +762,8 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 			DiffOut:   in.DiffOut,
 			GridSize:  in.GridSize,
 			Scale:     1,
+			Selector:  in.Selector,
+			Width:     in.Width,
 		})
 	},
 	Render: func(r service.PixelDiffResult) string {

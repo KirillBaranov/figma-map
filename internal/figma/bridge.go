@@ -319,6 +319,21 @@ func (b *Bridge) MainComponentName(ctx context.Context, fileKey, id string) (str
 	return *resp.Name, nil
 }
 
+// Animation implements Source.
+func (b *Bridge) Animation(ctx context.Context, fileKey, id string) ([]Animation, error) {
+	data, err := b.rpc(ctx, rpcRequest{Tool: "get_animation", NodeIDs: []string{id}, FileKey: fileKey})
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Animations []Animation `json:"animations"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode get_animation: %w", err)
+	}
+	return resp.Animations, nil
+}
+
 // decodeSingleNode handles both the object and one-element-array shapes the
 // bridge may return for get_node.
 func decodeSingleNode(data json.RawMessage) (*Node, error) {

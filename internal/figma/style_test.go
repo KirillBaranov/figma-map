@@ -164,7 +164,7 @@ func TestGridLayoutDecode(t *testing.T) {
 const reactionsFixture = `{
   "id": "1:1", "name": "Button", "type": "INSTANCE",
   "bounds": {"x":0,"y":0,"width":100,"height":40},
-  "reactions": [{"trigger":"ON_HOVER","transitionType":"SMART_ANIMATE","easing":"EASE_OUT","duration":0.2}]
+  "reactions": [{"trigger":"ON_HOVER","transitionType":"SMART_ANIMATE","easing":"EASE_OUT","duration":0.2,"destinationId":"1:2"}]
 }`
 
 func TestReactionsDecode(t *testing.T) {
@@ -181,6 +181,9 @@ func TestReactionsDecode(t *testing.T) {
 	}
 	if r.Duration == nil || *r.Duration != 0.2 {
 		t.Errorf("duration = %+v", r.Duration)
+	}
+	if r.DestinationID != "1:2" {
+		t.Errorf("destinationId = %q", r.DestinationID)
 	}
 }
 

@@ -3,6 +3,7 @@ import {
   resolveComponentProps,
   resolveVariantModes,
   resolveMainComponentName,
+  resolveAnimation,
   createVariableCache,
   createConcurrencyPool,
   CHUNK_CHILD_THRESHOLD,
@@ -20,6 +21,7 @@ type RequestType =
   | "get_node"
   | "find_nodes"
   | "get_main_component_name"
+  | "get_animation"
   | "get_styles"
   | "get_metadata"
   | "get_design_context"
@@ -542,6 +544,19 @@ async function handleGetMainComponentName(request: ServerRequest) {
 
   const name = await resolveMainComponentName(node as SceneNode);
   return { name: name ?? null };
+}
+
+async function handleGetAnimation(request: ServerRequest) {
+  const nodeId = request.nodeIds?.[0];
+  if (!nodeId) throw new Error("nodeIds is required for get_animation");
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error(`Node not found: ${nodeId}`);
+  }
+
+  const animations = await resolveAnimation(node as SceneNode, createVariableCache());
+  return { animations: animations ?? [] };
 }
 
 async function handleGetStyles() {
@@ -1621,6 +1636,7 @@ const HANDLERS: { [K in RequestType]: (request: ServerRequest) => Promise<unknow
   get_node: handleGetNode,
   find_nodes: handleFindNodes,
   get_main_component_name: handleGetMainComponentName,
+  get_animation: handleGetAnimation,
   get_styles: handleGetStyles,
   get_metadata: async () => handleGetMetadata(),
   get_design_context: handleGetDesignContext,
