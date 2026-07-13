@@ -1,0 +1,310 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>BankDash — treatment (figma-map)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;600&family=Poppins:wght@700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 1175px;
+    background: #ffffff;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+  [data-figma-node] { position: absolute; }
+  img { display: block; }
+
+  #bg-78-429 { left: 250px; top: 101px; width: 1190px; height: 1083px; background: #f5f7fa; }
+  #divider-v-78-698 { left: 249px; top: 0; width: 1px; height: 1184px; background: #e6eff5; }
+  #divider-h-78-597 { left: 250px; top: 100px; width: 1190px; height: 1px; background: #e6eff5; }
+
+  /* header */
+  #logo-105-460 { left: 38px; top: 31px; width: 36px; height: 36px; }
+  #logo-text-105-468 { left: 83px; top: 35px; width: 138px; height: 32px; font-family: 'Poppins', sans-serif; font-weight: 900; font-size: 25px; color: #343c6a; }
+  #overview-105-452 { left: 290px; top: 33px; width: 200px; height: 34px; font-size: 28px; font-weight: 600; color: #343c6a; }
+  #search-bg-105-454 { left: 890px; top: 25px; width: 255px; height: 50px; background: #f5f7fa; border-radius: 40px; }
+  #search-icon-105-455 { left: 915px; top: 40px; width: 20px; height: 20px; }
+  #search-text-105-458 { left: 950px; top: 41px; width: 200px; height: 18px; font-size: 15px; color: #8ba3cb; white-space: nowrap; }
+  #settings-bg-105-442 { left: 1175px; top: 25px; width: 50px; height: 50px; border-radius: 50%; background: #f5f7fa; }
+  #settings-icon-105-443 { left: 1187px; top: 37px; width: 25px; height: 25px; }
+  #notif-bg-105-447 { left: 1255px; top: 25px; width: 50px; height: 50px; border-radius: 50%; background: #f5f7fa; }
+  #notif-icon-105-448 { left: 1268px; top: 37px; width: 25px; height: 25px; }
+  #avatar-header-105-438 { left: 1340px; top: 20px; width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
+
+  /* sidebar */
+  #sidebar-accent-78-428 { left: 0; top: 114px; width: 6px; height: 60px; background: #2d60ff; }
+  #dash-icon-78-425 { left: 44px; top: 131px; width: 25px; height: 25px; }
+  #dash-text-78-427 { left: 95px; top: 133px; width: 94px; height: 22px; font-size: 18px; font-weight: 500; color: #2d60ff; }
+
+  .nav-icon { width: 25px; height: 25px; }
+  .nav-text { font-size: 18px; font-weight: 500; color: #b1b1b1; }
+  #ic-transfer  { left: 44px; top: 195px; width: 25px; height: 25px; }
+  #tx-transactions { left: 95px; top: 197px; width: 112px; height: 22px; }
+  #ic-accounts  { left: 44px; top: 260px; width: 25px; height: 25px; }
+  #tx-accounts  { left: 95px; top: 261px; width: 82px; height: 22px; }
+  #ic-investment { left: 44px; top: 323px; width: 25px; height: 25px; }
+  #tx-investments { left: 95px; top: 325px; width: 106px; height: 22px; }
+  #ic-creditcard { left: 43px; top: 387px; width: 26px; height: 26px; }
+  #tx-creditcards { left: 95px; top: 389px; width: 109px; height: 22px; }
+  #ic-loan { left: 43px; top: 452px; width: 25px; height: 25px; }
+  #tx-loans { left: 95px; top: 453px; width: 52px; height: 22px; }
+  #ic-service { left: 43px; top: 515px; width: 25px; height: 25px; }
+  #tx-services { left: 95px; top: 517px; width: 75px; height: 22px; }
+  #ic-privileges { left: 43px; top: 579px; width: 25px; height: 25px; }
+  #tx-privileges { left: 95px; top: 581px; width: 116px; height: 22px; }
+  #ic-settings-nav { left: 41px; top: 643px; width: 25px; height: 25px; }
+  #tx-setting { left: 95px; top: 645px; width: 62px; height: 22px; }
+
+  /* section headings */
+  .section-h { font-size: 22px; font-weight: 600; color: #343c6a; }
+  #h-mycards { left: 290px; top: 125px; width: 102px; height: 27px; }
+  #h-recenttx { left: 1050px; top: 125px; width: 207px; height: 27px; }
+  #h-weekly { left: 290px; top: 431px; width: 220px; height: 27px; white-space: nowrap; }
+  #h-expense { left: 1050px; top: 431px; width: 197px; height: 27px; }
+  #h-quicktransfer { left: 290px; top: 822px; width: 157px; height: 27px; }
+  #h-balancehistory { left: 765px; top: 822px; width: 168px; height: 27px; }
+  #seeall { left: 956px; top: 130px; width: 57px; height: 21px; font-size: 17px; font-weight: 600; color: #343c6a; text-align: right; }
+
+  /* my cards */
+  #card1-bg { left: 290px; top: 172px; width: 350px; height: 235px; border-radius: 25px; overflow: hidden; }
+  #card1-bg img { width: 100%; height: 100%; object-fit: cover; }
+  #card2-bg { left: 670px; top: 172px; width: 350px; height: 235px; border-radius: 25px; background: #fff; border: 1px solid #dfeaf2; }
+  #card1-balance-label { left: 316px; top: 196px; font-size: 12px; color: rgba(255,255,255,.7); font-family: Lato; }
+  #card1-balance { left: 316px; top: 210px; font-size: 20px; font-weight: 600; color: #fff; font-family: Lato; }
+  #card2-balance-label { left: 696px; top: 196px; font-size: 12px; color: #718ebf; font-family: Lato; }
+  #card2-balance { left: 696px; top: 210px; font-size: 20px; font-weight: 600; color: #343c6a; font-family: Lato; }
+  #chip1 { left: 581px; top: 197px; width: 34.77px; height: 34.77px; }
+  #chip2 { left: 961px; top: 197px; width: 34.77px; height: 34.77px; filter: grayscale(1) brightness(1.5); }
+  #card1-holder-label { left: 316px; top: 267px; font-size: 12px; color: rgba(255,255,255,.7); font-family: Lato; }
+  #card1-holder { left: 316px; top: 283.9px; font-size: 15px; font-weight: 600; color: #fff; font-family: Lato; }
+  #card1-valid-label { left: 473px; top: 267px; font-size: 12px; color: rgba(255,255,255,.7); font-family: Lato; }
+  #card1-valid { left: 473px; top: 283.9px; font-size: 15px; font-weight: 600; color: #fff; font-family: Lato; }
+  #card2-holder-label { left: 696px; top: 263px; font-size: 12px; color: #718ebf; font-family: Lato; }
+  #card2-holder { left: 696px; top: 279.9px; font-size: 15px; font-weight: 600; color: #343c6a; font-family: Lato; }
+  #card2-valid-label { left: 853px; top: 263px; font-size: 12px; color: #718ebf; font-family: Lato; }
+  #card2-valid { left: 853px; top: 279.9px; font-size: 15px; font-weight: 600; color: #343c6a; font-family: Lato; }
+  #card1-number { left: 316px; top: 359px; font-size: 22px; font-weight: 600; color: #fff; font-family: Lato; }
+  #card2-number { left: 696px; top: 359px; font-size: 22px; font-weight: 600; color: #343c6a; font-family: Lato; }
+  #card1-divider { left: 290px; top: 337px; width: 350px; height: 1px; background: rgba(255,255,255,.3); }
+  #card2-divider { left: 670px; top: 337px; width: 350px; height: 1px; background: #dfeaf2; }
+
+  /* recent transaction */
+  #recenttx-bg { left: 1050px; top: 172px; width: 350px; height: 235px; background: #fff; border-radius: 25px; }
+  .txn-icon-bg { width: 55px; height: 55px; border-radius: 50%; }
+  .txn-icon-img { width: 28px; height: 28px; }
+  .txn-name { font-size: 16px; font-weight: 500; color: #232323; }
+  .txn-date { font-size: 15px; color: #718ebf; }
+  .txn-amt { font-size: 16px; font-weight: 500; text-align: right; }
+
+  #tx1-bg { left: 1075px; top: 197px; background: #fff5d9; }
+  #tx1-icon { left: 1089px; top: 210px; }
+  #tx1-name { left: 1147px; top: 203px; width: 167px; }
+  #tx1-date { left: 1147px; top: 229px; width: 119px; }
+  #tx1-amt { left: 1327px; top: 215px; width: 49px; color: #ff4b4a; }
+
+  #tx2-bg { left: 1075px; top: 262px; background: #e7edff; }
+  #tx2-icon { left: 1089px; top: 276px; }
+  #tx2-name { left: 1147px; top: 268px; width: 118px; }
+  #tx2-date { left: 1147px; top: 294px; width: 118px; }
+  #tx2-amt { left: 1310px; top: 280px; width: 66px; color: #41d4a8; }
+
+  #tx3-bg { left: 1075px; top: 327px; background: #dcfaf8; }
+  #tx3-icon { left: 1089px; top: 341px; }
+  #tx3-name { left: 1147px; top: 333px; width: 140px; white-space: nowrap; }
+  #tx3-date { left: 1147px; top: 359px; width: 116px; }
+  #tx3-amt { left: 1309px; top: 345px; width: 67px; color: #41d4a8; }
+
+  /* weekly activity */
+  #weekly-bg { left: 290px; top: 476px; width: 730px; height: 322px; background: #fff; border-radius: 25px; }
+  #weekly-chart { left: 323px; top: 544px; width: 667px; }
+  #legend { left: 792px; top: 504px; font-size: 15px; color: #718ebf; display: flex; gap: 24px; align-items: center; }
+  #legend .dot { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+
+  /* expense stats */
+  #expense-bg { left: 1050px; top: 476px; width: 350px; height: 322px; background: #fff; border-radius: 25px; }
+  #pie-chart { left: 1091px; top: 507px; width: 269px; }
+  .pie-label { font-size: 13px; font-weight: 700; color: #fff; text-align: center; line-height: 18px; }
+  #pl-entertainment { left: 1154px; top: 540px; width: 100px; }
+  #pl-investment { left: 1106px; top: 640px; width: 79px; }
+  #pl-billexpense { left: 1249px; top: 590px; width: 84px; }
+  #pl-others { left: 1244px; top: 670px; width: 48px; }
+
+  /* quick transfer */
+  #qt-bg { left: 290px; top: 869px; width: 445px; height: 276px; background: #fff; border-radius: 25px; }
+  .avatar-name { font-size: 16px; color: #232323; }
+  .avatar-role { font-size: 15px; color: #718ebf; }
+  #av-livia-photo { left: 320px; top: 904px; width: 70px; height: 70px; border-radius: 50%; object-fit: cover; }
+  #av-livia-name { left: 315px; top: 989px; width: 85px; }
+  #av-livia-role { left: 339px; top: 1013px; width: 33px; }
+  #av-randy-photo { left: 440px; top: 904px; width: 70px; height: 70px; border-radius: 50%; object-fit: cover; }
+  #av-randy-name { left: 428px; top: 989px; width: 140px; white-space: nowrap; }
+  #av-randy-role { left: 446px; top: 1013px; width: 80px; white-space: nowrap; }
+  #av-workman-photo { left: 556px; top: 904px; width: 70px; height: 70px; border-radius: 50%; object-fit: cover; }
+  #av-workman-name { left: 555px; top: 989px; width: 71px; }
+  #av-workman-role { left: 559px; top: 1013px; width: 64px; }
+  #qt-next-circle { left: 659px; top: 945px; width: 50px; height: 50px; border-radius: 50%; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.12); display: flex; align-items: center; justify-content: center; }
+  #qt-write-amount { left: 315px; top: 1076px; font-size: 16px; color: #718ebf; }
+  #qt-input-bg { left: 445px; top: 1060px; width: 265px; height: 50px; background: #edf1f7; border-radius: 50px; }
+  #qt-amount { left: 475px; top: 1076px; font-size: 16px; color: #718ebf; }
+  #qt-send-bg { left: 585px; top: 1060px; width: 125px; height: 50px; background: #1814f3; border-radius: 50px; box-shadow: 0 8px 20px rgba(24,20,243,.35); }
+  #qt-send-icon { left: 609px; top: 1074px; width: 77px; }
+
+  /* balance history */
+  #bh-bg { left: 765px; top: 869px; width: 635px; height: 276px; background: #fff; border-radius: 25px; }
+  #bh-grid { left: 828px; top: 904px; width: 547px; }
+  #bh-curve { left: 828px; top: 909px; width: 547px; }
+  .bh-axis-label { font-size: 13px; color: #718ebf; }
+  #bh-y-0 { left: 785px; top: 1084px; width: 29px; text-align: right; }
+  #bh-y-200 { left: 785px; top: 1038px; width: 29px; text-align: right; }
+  #bh-y-400 { left: 785px; top: 992px; width: 29px; text-align: right; }
+  #bh-y-600 { left: 785px; top: 945px; width: 29px; text-align: right; }
+  #bh-y-800 { left: 785px; top: 899px; width: 29px; text-align: right; }
+  .bh-x-label { font-size: 14px; color: #718ebf; }
+  #bh-x-jul { left: 827px; top: 1098px; }
+  #bh-x-aug { left: 895px; top: 1098px; }
+  #bh-x-sep { left: 984px; top: 1098px; }
+  #bh-x-oct { left: 1062px; top: 1098px; }
+  #bh-x-nov { left: 1141px; top: 1098px; }
+  #bh-x-dec { left: 1219px; top: 1098px; }
+  #bh-x-jan { left: 1297px; top: 1098px; }
+</style>
+</head>
+<body>
+
+  <div id="bg-78-429" data-figma-node="78:429"></div>
+  <div id="divider-v-78-698" data-figma-node="78:698"></div>
+  <div id="divider-h-78-597" data-figma-node="78:597"></div>
+
+  <img id="logo-105-460" data-figma-node="105:460" src="logo.png" alt="">
+  <div id="logo-text-105-468" data-figma-node="105:468">BankDash.</div>
+  <div id="overview-105-452" data-figma-node="105:452">Overview</div>
+  <div id="search-bg-105-454" data-figma-node="105:454"></div>
+  <img id="search-icon-105-455" data-figma-node="105:455" src="icon-search.svg" alt="">
+  <div id="search-text-105-458" data-figma-node="105:458">Search for something</div>
+  <div id="settings-bg-105-442" data-figma-node="105:442"></div>
+  <img id="settings-icon-105-443" data-figma-node="105:443" src="icon-settings.svg" alt="">
+  <div id="notif-bg-105-447" data-figma-node="105:447"></div>
+  <img id="notif-icon-105-448" data-figma-node="105:448" src="icon-notification.svg" alt="">
+  <img id="avatar-header-105-438" data-figma-node="105:438" src="avatar-header.png" alt="">
+
+  <div id="sidebar-accent-78-428" data-figma-node="78:428"></div>
+  <img id="dash-icon-78-425" data-figma-node="78:425" src="icon-nav-dashboard.svg" alt="">
+  <div id="dash-text-78-427" data-figma-node="78:427">Dashboard</div>
+
+  <img id="ic-transfer" class="nav-icon" data-figma-node="78:393" src="icon-nav-transfer.svg" alt="">
+  <div id="tx-transactions" class="nav-text" data-figma-node="78:406">Transactions</div>
+  <img id="ic-accounts" class="nav-icon" data-figma-node="78:414" src="icon-nav-accounts.svg" alt="">
+  <div id="tx-accounts" class="nav-text" data-figma-node="78:407">Accounts</div>
+  <img id="ic-investment" class="nav-icon" data-figma-node="78:382" src="icon-nav-investment.svg" alt="">
+  <div id="tx-investments" class="nav-text" data-figma-node="78:408">Investments</div>
+  <img id="ic-creditcard" class="nav-icon" data-figma-node="78:376" src="icon-nav-creditcard.svg" alt="">
+  <div id="tx-creditcards" class="nav-text" data-figma-node="78:409">Credit Cards</div>
+  <img id="ic-loan" class="nav-icon" data-figma-node="78:401" src="icon-nav-loan.svg" alt="">
+  <div id="tx-loans" class="nav-text" data-figma-node="78:410">Loans</div>
+  <img id="ic-service" class="nav-icon" data-figma-node="78:355" src="icon-nav-service.svg" alt="">
+  <div id="tx-services" class="nav-text" data-figma-node="78:411">Services</div>
+  <img id="ic-privileges" class="nav-icon" data-figma-node="78:417" src="icon-nav-privileges.svg" alt="">
+  <div id="tx-privileges" class="nav-text" data-figma-node="78:412">My Privileges</div>
+  <img id="ic-settings-nav" class="nav-icon" data-figma-node="78:374" src="icon-nav-settings.svg" alt="">
+  <div id="tx-setting" class="nav-text" data-figma-node="78:413">Setting</div>
+
+  <div id="h-mycards" class="section-h" data-figma-node="78:431">My Cards</div>
+  <div id="h-recenttx" class="section-h" data-figma-node="78:467">Recent Transaction</div>
+  <div id="h-weekly" class="section-h" data-figma-node="78:531">Weekly Activity</div>
+  <div id="h-expense" class="section-h" data-figma-node="78:586">Expense Statistics</div>
+  <div id="h-quicktransfer" class="section-h" data-figma-node="78:599">Quick Transfer</div>
+  <div id="h-balancehistory" class="section-h" data-figma-node="78:639">Balance History</div>
+  <div id="seeall" data-figma-node="121:57">See All</div>
+
+  <div id="card1-bg" data-figma-node="78:433"><img src="card1-bg.png" alt=""></div>
+  <div id="card2-bg" data-figma-node="78:450"></div>
+  <div id="card1-balance-label" data-figma-node="78:442">Balance</div>
+  <div id="card1-balance" data-figma-node="78:443">$5,756</div>
+  <div id="card2-balance-label" data-figma-node="78:459">Balance</div>
+  <div id="card2-balance" data-figma-node="78:460">$5,756</div>
+  <img id="chip1" data-figma-node="78:444" src="chip-card.png" alt="">
+  <img id="chip2" data-figma-node="78:461" src="chip-card.png" alt="">
+  <div id="card1-holder-label" data-figma-node="78:439">CARD HOLDER</div>
+  <div id="card1-holder" data-figma-node="78:440">Eddy Cusuma</div>
+  <div id="card1-valid-label" data-figma-node="78:436">VALID THRU</div>
+  <div id="card1-valid" data-figma-node="78:437">12/22</div>
+  <div id="card2-holder-label" data-figma-node="78:456">CARD HOLDER</div>
+  <div id="card2-holder" data-figma-node="78:457">Eddy Cusuma</div>
+  <div id="card2-valid-label" data-figma-node="78:453">VALID THRU</div>
+  <div id="card2-valid" data-figma-node="78:454">12/22</div>
+  <div id="card1-divider" data-figma-node="105:378"></div>
+  <div id="card2-divider" data-figma-node="78:451"></div>
+  <div id="card1-number" data-figma-node="78:446">3778 **** **** 1234</div>
+  <div id="card2-number" data-figma-node="78:463">3778 **** **** 1234</div>
+
+  <div id="recenttx-bg" data-figma-node="78:712"></div>
+
+  <div id="tx1-bg" class="txn-icon-bg" data-figma-node="105:370"></div>
+  <img id="tx1-icon" class="txn-icon-img" data-figma-node="78:488" src="icon-txn-deposit.svg" alt="">
+  <div id="tx1-name" class="txn-name" data-figma-node="78:484">Deposit from my Card</div>
+  <div id="tx1-date" class="txn-date" data-figma-node="78:485">28 January 2021</div>
+  <div id="tx1-amt" class="txn-amt" data-figma-node="78:486">-$850</div>
+
+  <div id="tx2-bg" class="txn-icon-bg" data-figma-node="105:371"></div>
+  <img id="tx2-icon" class="txn-icon-img" data-figma-node="78:474" src="icon-txn-paypal.svg" alt="">
+  <div id="tx2-name" class="txn-name" data-figma-node="78:470">Deposit Paypal</div>
+  <div id="tx2-date" class="txn-date" data-figma-node="78:471">25 January 2021</div>
+  <div id="tx2-amt" class="txn-amt" data-figma-node="78:472">+$2,500</div>
+
+  <div id="tx3-bg" class="txn-icon-bg" data-figma-node="105:372"></div>
+  <img id="tx3-icon" class="txn-icon-img" data-figma-node="78:493" src="icon-txn-transfer.svg" alt="">
+  <div id="tx3-name" class="txn-name" data-figma-node="78:478">Jemi Wilson</div>
+  <div id="tx3-date" class="txn-date" data-figma-node="78:479">21 January 2021</div>
+  <div id="tx3-amt" class="txn-amt" data-figma-node="78:480">+$5,400</div>
+
+  <div id="weekly-bg" data-figma-node="78:530"></div>
+  <img id="weekly-chart" data-figma-node="78:532" src="chart-weekly-bars.png" alt="">
+  <div id="legend" data-figma-node="78:578">
+    <span><span class="dot" style="background:#16dbcc"></span>Diposit</span>
+    <span><span class="dot" style="background:#ff82ac"></span>Withdraw</span>
+  </div>
+
+  <div id="expense-bg" data-figma-node="78:720"></div>
+  <img id="pie-chart" data-figma-node="78:588" src="chart-pie.png" alt="">
+  <div id="pl-entertainment" class="pie-label" data-figma-node="78:593">30%<br>Entertainment</div>
+  <div id="pl-investment" class="pie-label" data-figma-node="78:594">20%<br>Investment</div>
+  <div id="pl-billexpense" class="pie-label" data-figma-node="78:595">15%<br>Bill Expense</div>
+  <div id="pl-others" class="pie-label" data-figma-node="78:596">35%<br>Others</div>
+
+  <div id="qt-bg" data-figma-node="78:726"></div>
+  <img id="av-livia-photo" data-figma-node="78:614" src="avatar-livia.png" alt="">
+  <div id="av-livia-name" class="avatar-name" data-figma-node="78:612">Livia Bator</div>
+  <div id="av-livia-role" class="avatar-role" data-figma-node="78:613">CEO</div>
+  <img id="av-randy-photo" data-figma-node="78:621" src="avatar-randy.png" alt="">
+  <div id="av-randy-name" class="avatar-name" data-figma-node="78:619">Randy Press</div>
+  <div id="av-randy-role" class="avatar-role" data-figma-node="78:620">Director</div>
+  <img id="av-workman-photo" data-figma-node="78:606" src="avatar-workman.png" alt="">
+  <div id="av-workman-name" class="avatar-name" data-figma-node="78:604">Workman</div>
+  <div id="av-workman-role" class="avatar-role" data-figma-node="78:605">Designer</div>
+  <div id="qt-next-circle" data-figma-node="78:625">›</div>
+  <div id="qt-write-amount" data-figma-node="78:628">Write Amount</div>
+  <div id="qt-input-bg" data-figma-node="78:630"></div>
+  <div id="qt-amount" data-figma-node="78:631">525.50</div>
+  <div id="qt-send-bg" data-figma-node="78:633"></div>
+  <img id="qt-send-icon" data-figma-node="78:634" src="icon-send.svg" alt="">
+
+  <div id="bh-bg" data-figma-node="78:728"></div>
+  <img id="bh-grid" data-figma-node="78:680" src="chart-balance-area.png" alt="">
+  <img id="bh-curve" data-figma-node="78:730" src="chart-balance-curve.png" alt="">
+  <div id="bh-y-0" class="bh-axis-label" data-figma-node="78:667">0</div>
+  <div id="bh-y-200" class="bh-axis-label" data-figma-node="78:670">200</div>
+  <div id="bh-y-400" class="bh-axis-label" data-figma-node="78:673">400</div>
+  <div id="bh-y-600" class="bh-axis-label" data-figma-node="78:676">600</div>
+  <div id="bh-y-800" class="bh-axis-label" data-figma-node="78:679">800</div>
+  <div id="bh-x-jul" class="bh-x-label" data-figma-node="78:643">Jul</div>
+  <div id="bh-x-aug" class="bh-x-label" data-figma-node="78:644">Aug</div>
+  <div id="bh-x-sep" class="bh-x-label" data-figma-node="78:645">Sep</div>
+  <div id="bh-x-oct" class="bh-x-label" data-figma-node="78:646">Oct</div>
+  <div id="bh-x-nov" class="bh-x-label" data-figma-node="78:647">Nov</div>
+  <div id="bh-x-dec" class="bh-x-label" data-figma-node="78:648">Dec</div>
+  <div id="bh-x-jan" class="bh-x-label" data-figma-node="78:649">Jan</div>
+
+</body>
+</html>

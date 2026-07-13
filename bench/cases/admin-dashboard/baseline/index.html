@@ -1,0 +1,253 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>BankDash — baseline (by eye)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 1175px;
+    background: #f2f5f9;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ---- sidebar ---- */
+  .sidebar {
+    position: absolute; left: 0; top: 0; width: 250px; height: 1175px;
+    background: #fff; border-right: 1px solid #e8eef5;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; padding: 30px 0 30px 38px; }
+  .logo img { width: 34px; height: 34px; }
+  .logo span { font-size: 24px; font-weight: 700; color: #333d6a; }
+  .nav { margin-top: 20px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 18px;
+    padding: 14px 0 14px 44px; font-size: 17px; font-weight: 500; color: #adb1ba;
+    position: relative;
+  }
+  .nav-item img { width: 24px; height: 24px; }
+  .nav-item.active {
+    color: #2b57ff;
+    background: #f5f8ff;
+  }
+  .nav-item.active::before {
+    content: ""; position: absolute; left: 0; top: 0; width: 5px; height: 100%;
+    background: #2b57ff;
+  }
+
+  /* ---- header ---- */
+  .header {
+    position: absolute; left: 250px; top: 0; width: 1190px; height: 100px;
+    background: #fff; border-bottom: 1px solid #e8eef5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 40px;
+  }
+  .header h1 { font-size: 26px; font-weight: 600; color: #333d6a; }
+  .search {
+    display: flex; align-items: center; gap: 10px;
+    background: #f2f5f9; border-radius: 30px; padding: 14px 24px; width: 250px;
+  }
+  .search img { width: 18px; height: 18px; opacity: .6; }
+  .search span { color: #9aabc7; font-size: 14px; }
+  .header-icons { display: flex; align-items: center; gap: 16px; }
+  .icon-circle { width: 48px; height: 48px; border-radius: 50%; background: #f2f5f9;
+    display: flex; align-items: center; justify-content: center; }
+  .icon-circle img { width: 22px; height: 22px; }
+  .avatar-header { width: 55px; height: 55px; border-radius: 50%; object-fit: cover; }
+
+  /* ---- content ---- */
+  .content { position: absolute; left: 250px; top: 100px; width: 1190px; height: 1075px; }
+  h2.section { font-size: 20px; font-weight: 600; color: #333d6a; margin-bottom: 20px; }
+  .panel { background: #fff; border-radius: 20px; padding: 24px; }
+
+  .my-cards { position: absolute; left: 40px; top: 25px; width: 730px; }
+  .see-all { position: absolute; right: 90px; top: 5px; font-size: 15px; font-weight: 600; color: #333d6a; }
+  .cards-row { display: flex; gap: 30px; }
+  .card { width: 350px; height: 210px; border-radius: 20px; padding: 24px 30px; color: #fff; position: relative; }
+  .card.blue { background: linear-gradient(120deg, #5b5be0, #1616e0); }
+  .card.white { background: #fff; border: 1px solid #e2ebf5; color: #333d6a; }
+  .card .label { font-size: 12px; opacity: .7; }
+  .card .balance { font-size: 20px; font-weight: 600; margin-top: 6px; }
+  .card .chip { width: 32px; height: 32px; position: absolute; right: 30px; top: 24px; }
+  .card .bottom-row { display: flex; justify-content: space-between; align-items: flex-end;
+    position: absolute; bottom: 24px; left: 30px; right: 30px; }
+  .card .number { font-size: 20px; font-weight: 600; letter-spacing: 1px; }
+  .card .small { font-size: 11px; opacity: .7; }
+  .card .name { font-size: 14px; font-weight: 600; margin-top: 4px; }
+
+  .recent-transaction { position: absolute; left: 800px; top: 25px; width: 350px; }
+  .txn-panel { height: 210px; }
+  .txn-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; }
+  .txn-icon { width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .txn-icon img { width: 24px; height: 24px; }
+  .txn-info { flex: 1; }
+  .txn-name { font-size: 15px; font-weight: 500; color: #232323; }
+  .txn-date { font-size: 13px; color: #8798ad; }
+  .txn-amount { font-size: 15px; font-weight: 500; }
+  .txn-amount.neg { color: #ff4b4a; }
+  .txn-amount.pos { color: #3ad4a8; }
+
+  .weekly-activity { position: absolute; left: 40px; top: 320px; width: 730px; }
+  .weekly-panel img { width: 100%; }
+
+  .expense-stats { position: absolute; left: 800px; top: 320px; width: 350px; }
+  .expense-panel { position: relative; height: 300px; }
+  .pie-wrap { position: relative; width: 260px; margin: 10px auto; }
+  .pie-wrap img { width: 100%; }
+  .pie-label { position: absolute; color: #fff; font-weight: 700; font-size: 13px; text-align: center; }
+
+  .quick-transfer { position: absolute; left: 40px; top: 700px; width: 445px; }
+  .qt-panel { height: 240px; }
+  .avatars { display: flex; gap: 30px; padding: 10px 0; }
+  .avatar-item { text-align: center; }
+  .avatar-item img { width: 65px; height: 65px; border-radius: 50%; object-fit: cover; }
+  .avatar-item .name { font-size: 15px; margin-top: 8px; color: #232323; }
+  .avatar-item .role { font-size: 13px; color: #8798ad; }
+  .qt-input-row { display: flex; align-items: center; gap: 12px; margin-top: 30px; }
+  .qt-label { font-size: 15px; color: #8798ad; }
+  .qt-input { flex: 1; background: #eef1f8; border-radius: 30px; padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between; }
+  .qt-input span { color: #8798ad; font-size: 15px; }
+  .send-btn { background: #1a15f5; color: #fff; border-radius: 30px; padding: 14px 28px;
+    font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+
+  .balance-history { position: absolute; left: 520px; top: 700px; width: 630px; }
+  .bh-panel { height: 240px; position: relative; }
+  .bh-chart { position: relative; height: 170px; margin-top: 15px; }
+  .bh-chart img.grid { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .bh-chart img.curve { position: absolute; left: 40px; top: 5px; width: 480px; }
+  .bh-yaxis { position: absolute; left: 0; top: 0; font-size: 12px; color: #8798ad; }
+  .bh-xaxis { display: flex; justify-content: space-between; margin-top: 10px; padding-left: 40px; font-size: 13px; color: #8798ad; }
+</style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <div class="logo"><img src="logo.png" alt=""><span>BankDash.</span></div>
+    <div class="nav">
+      <div class="nav-item active"><img src="icon-nav-dashboard.svg" alt="">Dashboard</div>
+      <div class="nav-item"><img src="icon-nav-transfer.svg" alt="">Transactions</div>
+      <div class="nav-item"><img src="icon-nav-accounts.svg" alt="">Accounts</div>
+      <div class="nav-item"><img src="icon-nav-investment.svg" alt="">Investments</div>
+      <div class="nav-item"><img src="icon-nav-creditcard.svg" alt="">Credit Cards</div>
+      <div class="nav-item"><img src="icon-nav-loan.svg" alt="">Loans</div>
+      <div class="nav-item"><img src="icon-nav-service.svg" alt="">Services</div>
+      <div class="nav-item"><img src="icon-nav-privileges.svg" alt="">My Privileges</div>
+      <div class="nav-item"><img src="icon-nav-settings.svg" alt="">Setting</div>
+    </div>
+  </div>
+
+  <div class="header">
+    <h1>Overview</h1>
+    <div class="search"><img src="icon-search.svg" alt=""><span>Search for something</span></div>
+    <div class="header-icons">
+      <div class="icon-circle"><img src="icon-settings.svg" alt=""></div>
+      <div class="icon-circle"><img src="icon-notification.svg" alt=""></div>
+      <img class="avatar-header" src="avatar-header.png" alt="">
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="my-cards">
+      <h2 class="section">My Cards</h2>
+      <div class="see-all">See All</div>
+      <div class="cards-row">
+        <div class="card blue">
+          <div class="label">Balance</div>
+          <div class="balance">$5,756</div>
+          <img class="chip" src="chip-card.png" alt="">
+          <div style="position:absolute; top:110px; left:30px; font-size:20px; letter-spacing:2px;">3778 **** **** 1234</div>
+          <div class="bottom-row">
+            <div><div class="small">CARD HOLDER</div><div class="name">Eddy Cusuma</div></div>
+            <div><div class="small">VALID THRU</div><div class="name">12/22</div></div>
+          </div>
+        </div>
+        <div class="card white">
+          <div class="label" style="color:#8798ad">Balance</div>
+          <div class="balance">$5,756</div>
+          <img class="chip" src="chip-card.png" alt="" style="filter:grayscale(1) brightness(1.6)">
+          <div style="position:absolute; top:110px; left:30px; font-size:20px; letter-spacing:2px;">3778 **** **** 1234</div>
+          <div class="bottom-row">
+            <div><div class="small" style="color:#8798ad">CARD HOLDER</div><div class="name">Eddy Cusuma</div></div>
+            <div><div class="small" style="color:#8798ad">VALID THRU</div><div class="name">12/22</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="recent-transaction">
+      <h2 class="section">Recent Transaction</h2>
+      <div class="panel txn-panel">
+        <div class="txn-row">
+          <div class="txn-icon" style="background:#fff4da"><img src="icon-txn-deposit.svg" alt=""></div>
+          <div class="txn-info"><div class="txn-name">Deposit from my Card</div><div class="txn-date">28 January 2021</div></div>
+          <div class="txn-amount neg">-$850</div>
+        </div>
+        <div class="txn-row">
+          <div class="txn-icon" style="background:#e8edff"><img src="icon-txn-paypal.svg" alt=""></div>
+          <div class="txn-info"><div class="txn-name">Deposit Paypal</div><div class="txn-date">25 January 2021</div></div>
+          <div class="txn-amount pos">+$2,500</div>
+        </div>
+        <div class="txn-row">
+          <div class="txn-icon" style="background:#dbfaf5"><img src="icon-txn-transfer.svg" alt=""></div>
+          <div class="txn-info"><div class="txn-name">Jemi Wilson</div><div class="txn-date">21 January 2021</div></div>
+          <div class="txn-amount pos">+$5,400</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="weekly-activity">
+      <h2 class="section">Weekly Activity</h2>
+      <div class="panel weekly-panel"><img src="chart-weekly-bars.png" alt=""></div>
+    </div>
+
+    <div class="expense-stats">
+      <h2 class="section">Expense Statistics</h2>
+      <div class="panel expense-panel">
+        <div class="pie-wrap">
+          <img src="chart-pie.png" alt="">
+          <div class="pie-label" style="left:35%; top:8%;">30%<br>Entertainment</div>
+          <div class="pie-label" style="left:8%; top:45%;">20%<br>Investment</div>
+          <div class="pie-label" style="left:62%; top:32%;">15%<br>Bill Expense</div>
+          <div class="pie-label" style="left:55%; top:60%;">35%<br>Others</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="quick-transfer">
+      <h2 class="section">Quick Transfer</h2>
+      <div class="panel qt-panel">
+        <div class="avatars">
+          <div class="avatar-item"><img src="avatar-livia.png" alt=""><div class="name">Livia Bator</div><div class="role">CEO</div></div>
+          <div class="avatar-item"><img src="avatar-randy.png" alt=""><div class="name">Randy Press</div><div class="role">Director</div></div>
+          <div class="avatar-item"><img src="avatar-workman.png" alt=""><div class="name">Workman</div><div class="role">Designer</div></div>
+        </div>
+        <div class="qt-input-row">
+          <span class="qt-label">Write Amount</span>
+          <div class="qt-input">
+            <span>525.50</span>
+            <div class="send-btn">Send <img src="icon-send.svg" alt="" style="width:16px;filter:invert(1)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="balance-history">
+      <h2 class="section">Balance History</h2>
+      <div class="panel bh-panel">
+        <div class="bh-chart">
+          <img class="grid" src="chart-balance-area.png" alt="">
+          <img class="curve" src="chart-balance-curve.png" alt="">
+        </div>
+        <div class="bh-xaxis">
+          <span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span><span>Jan</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

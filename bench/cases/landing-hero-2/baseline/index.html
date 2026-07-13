@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supa Resume — baseline (by eye)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    width: 1600px;
+    height: 960px;
+    background: #201f36;
+    font-family: 'Outfit', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bg {
+    position: absolute;
+    inset: 0;
+    width: 1600px;
+    height: 960px;
+    object-fit: cover;
+    z-index: 0;
+  }
+
+  .mockup {
+    position: absolute;
+    right: 60px;
+    top: 25px;
+    width: 730px;
+    z-index: 1;
+  }
+
+  .content {
+    position: absolute;
+    left: 110px;
+    top: 90px;
+    width: 620px;
+    z-index: 2;
+  }
+
+  .badge {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 90px;
+  }
+
+  .badge img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+
+  .badge span {
+    color: #dde2ea;
+    font-size: 28px;
+    font-weight: 600;
+  }
+
+  h1 {
+    color: #ffffff;
+    font-size: 72px;
+    font-weight: 600;
+    line-height: 1.05;
+  }
+
+  h1 .accent {
+    color: #7c6cf0;
+  }
+
+  .subtitle {
+    color: #ced3dd;
+    font-size: 32px;
+    font-weight: 400;
+    margin-top: 20px;
+    line-height: 1.3;
+    max-width: 560px;
+  }
+
+  .subtitle b {
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .grid {
+    display: flex;
+    gap: 20px;
+    margin-top: 60px;
+  }
+
+  .feature {
+    background: #2c2b46;
+    border-radius: 20px;
+    padding: 28px;
+    width: 190px;
+  }
+
+  .icon-wrap {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+
+  .icon-wrap.purple { background: #5531a7; }
+  .icon-wrap.yellow { background: #857129; }
+  .icon-wrap.green { background: #1f5c43; }
+
+  .icon-wrap img { width: 28px; height: 28px; }
+
+  .feature p {
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .feature.purple-text p { color: #c696fc; }
+  .feature.yellow-text p { color: #f2c94c; }
+  .feature.green-text p { color: #4ac06f; }
+</style>
+</head>
+<body>
+  <img class="bg" src="background.png" alt="">
+  <img class="mockup" src="mockup.png" alt="">
+
+  <div class="content">
+    <div class="badge">
+      <img src="image.png" alt="">
+      <span>Angelo Libero Designs</span>
+    </div>
+
+    <h1>Supa <span class="accent">Resume</span></h1>
+    <p class="subtitle">Modern, clean and supa customizable <b>resume &amp; cover letter
+      templates.</b></p>
+
+    <div class="grid">
+      <div class="feature purple-text">
+        <div class="icon-wrap purple"><img src="icon-dashboard-02.svg" alt=""></div>
+        <p>23 templates</p>
+      </div>
+      <div class="feature yellow-text">
+        <div class="icon-wrap yellow"><img src="icon-bulb.svg" alt=""></div>
+        <p>Light &amp; Dark</p>
+      </div>
+      <div class="feature green-text">
+        <div class="icon-wrap green"><img src="icon-dashboard.svg" alt=""></div>
+        <p>Auto Layout 3.0</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

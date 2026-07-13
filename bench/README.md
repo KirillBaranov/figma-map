@@ -4,6 +4,17 @@ Measures how close an agent's implementation gets to a Figma design **with** and
 **without** figma-map, using an *independent* metric so it doesn't just reward
 figma-map's own oracle.
 
+## Cases
+
+| Case | Source | Independent pixel diff |
+|---|---|---|
+| Landing hero (this file) | frame `868:167`, 1440×1024 | ~48% closer, see [REPORT.md](REPORT.md) |
+| [landing-hero-2](cases/landing-hero-2) | public Supa Resume community file, 1600×960 | ~27% closer, see [REPORT.md](cases/landing-hero-2/REPORT.md) |
+| [admin-dashboard](cases/admin-dashboard) | public BankDash Dashboard UI Kit, 1440×1175, real dense admin UI | ~78% closer, see [REPORT.md](cases/admin-dashboard/REPORT.md) |
+
+The method below applies to all three; each case's own README documents what's
+specific to it (source file, shared assets, reproduce commands).
+
 ## Method
 
 Same agent, same model, same task, same shared image assets — only the tool
