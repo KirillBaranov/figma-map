@@ -169,12 +169,39 @@ react accordingly instead of guessing or giving up.
      Figma's, and not something figma-map can decide for you (no
      structure-guessing heuristics — that's exactly the kind of judgment call
      that's yours, not the tool's).
+     Figma's canvas has no concept of "row" or "overlap is a mistake" — a
+     designer drops decorative elements (illustration clusters, badges, glow
+     blobs) wherever they look right, deliberately overlapping or bleeding
+     past a frame's edge, precisely *because* nothing downstream needs to
+     reflow them. A true row/column, by contrast, exists because content
+     flows through it (text length varies, items get added/removed) —
+     that's the thing flex is *for*. So the question isn't "do these look
+     aligned" but "if the content changed, would a human have wanted these
+     to reflow, or would that break the composition." Bounds that overlap
+     heavily or spill past their parent are a symptom worth noticing, not a
+     threshold to hit — one piece of evidence pointing at the same
+     conclusion the designer's intent already implies once you look for it.
+     When it's genuinely unclear, a screenshot compare (`verify pixeldiff
+     --selector`) against the Figma render is worth more here than
+     iterating on numbers: reconcile checks property values, not whether
+     you picked the right container mechanism, so a wrong call here sails
+     through every per-property check and still looks wrong.
    - **Stamp every element you create with `data-figma-node="<id>"`** using the
      node id from the plan. This is the contract that lets reconcile measure your
      output. Untagged elements are reported `unmeasured` (not assumed correct).
    - For images/icons, use **`capture export <nodeId> --format svg`** — export
      the real asset; never regenerate it. (`build codegen` also auto-exports
      vector/icon nodes to SVG files and emits `<img>` tags for you.)
+     This matters most for icon-kit illustration instances with complex or
+     visually-rotated vector geometry: that tilt is frequently baked
+     directly into the path data rather than expressed as a `rotation`
+     transform on the node, so there's no clean number to hand-translate.
+     Redrawing it from a generic icon set is redrawing a *different* asset
+     that happens to look similar, not the same shape — and it's a
+     synchronization hazard worth surfacing to the user rather than
+     silently "fixing": if the Figma source instance changes later, a
+     hand-recreated stand-in has no path back to the original and will
+     quietly drift out of sync.
 
 3. **Render** your implementation — a Storybook story or a dev-server URL.
 
@@ -199,6 +226,12 @@ react accordingly instead of guessing or giving up.
      diffs against figma-map's own raw codegen render instead. Read its
      `regions` field (a worst-first grid of per-cell diff%) to find *where*
      things differ — don't try to visually interpret the diff image.
+   - Building a section that lives mid-page rather than as its own isolated
+     story? Add **`--selector <nodeId-or-css-selector>`** to scope the
+     screenshot to just that element instead of the whole viewport — no need
+     to spin up isolation for it first. This is the concrete tool behind the
+     screenshot-before-committing-to-a-layout-mechanism note above, e.g.
+     `verify pixeldiff 1232:33509 --url http://localhost:3000/page --selector 1232:33509`.
 
 `match: true` means every measured property is within tolerance (spec-perfect).
 Pixel-raster identity is **not** the goal — font rendering makes it unattainable
@@ -210,6 +243,14 @@ and a human dev can't hit it either.
   padding, gap, radius, font, plus `fillVariable`/`strokeVariable`/`variables`
   for Figma Variable bindings and `reactions` for prototyping transitions).
   Use when hand-building or to double-check a value.
+- **`figma animation <nodeId>`** — for a node with `reactions`, resolves what
+  actually changes: `figma tokens`' `reactions` only gives trigger/timing
+  (cheap, on every node); this does the expensive part — following a
+  reaction's destination (or, when there isn't one, guessing a same-component
+  state-sibling and saying so via `resolvedVia`) and diffing styles into
+  `styleDelta.{from,to}`. Use those values to write a real CSS
+  `transition`/framer-motion `animate`, not just a note that something
+  hovers.
 - **`figma variables`** — the file's full Variable catalog (every
   collection/variable/mode), independent of any node. Use to see what tokens
   exist; `figma tokens` tells you what a *specific* node is bound to.
@@ -225,16 +266,46 @@ and a human dev can't hit it either.
   node to an image. Both write to a default path
   (`.figma-map/out/<nodeId>-<kind>.png`) and return that path — pass `--inline`
   only if you actually need the bytes back in the response.
+- **`capture browser <url> [--selector]`** — the implementation-side
+  counterpart: screenshot a live URL (dev server, Storybook iframe, local
+  HTML file), the whole viewport or, with `--selector` (CSS selector or a
+  bare Figma node id), cropped to one element inside a normally-sized page —
+  for looking at what's currently rendered without comparing it against a
+  Figma node (`verify pixeldiff --selector` does the same crop internally
+  when you *are* comparing). Same output convention: writes a PNG to
+  `--out`/a default path, `--inline` for the bytes.
 - **`setup components`** — the components available in the binding.
 
 ## Rules
 
 - **You write and fix the code; figma-map never does.** It answers and measures.
+  Its outputs — `build plan`'s `jsx`, `build codegen`'s skeleton, `figma
+  tokens`' values, a screenshot — are material to work from, not a
+  deliverable to ship. You're the one who answers for the final code, which
+  means it's your job to make it match how *this* project actually does
+  things (its component library, its styling convention, its file/naming
+  patterns) — figma-map has no way to know that and isn't trying to. A
+  rough shape of the loop: pull a screenshot of the target (the Figma
+  selection, or the matching element once something's rendered) → read the
+  plan/tokens to understand what's actually being built and with what exact
+  values → take the generated snippet as a reference shape, not a patch to
+  apply → rewrite it to fit the codebase's existing patterns → verify with
+  pixeldiff/reconcile → escalate to the user instead of guessing when
+  something is genuinely ambiguous (a binding that picked the wrong
+  component, a design decision numbers can't settle).
 - **Always tag generated elements** with `data-figma-node` — it's what makes the
   loop work. Build from `build plan` so the ids are at hand.
 - **Trust the numbers over your eyes.** If reconcile says padding is 12 vs 16,
   it's 12 vs 16 — fix it, don't re-examine the screenshot. Same for pixeldiff's
   `regions` breakdown — read the numbers, don't eyeball the overlay image.
+  This holds for *property values*, which have one correct number and
+  reconcile already checks mechanically. It doesn't extend to *structural*
+  decisions like flex vs absolute (see the `position: absolute` note above)
+  — that's not a value reconcile measures at all, so a wrong container
+  mechanism will pass every property check and still be visibly wrong.
+  When a section's composition isn't obviously a clean flow, a screenshot
+  compare is the fastest way to sanity-check the structural read before
+  sinking time into numeric fixes that can't catch that class of mistake.
 - **Name values after their bound Variable when one exists.** `figma tokens`
   reports both the literal value and (via `fillVariable`/`strokeVariable`/
   `variables`) the Variable it's bound to, if any — use the Variable name,
