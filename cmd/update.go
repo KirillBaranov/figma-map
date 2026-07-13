@@ -71,19 +71,19 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 	if current != "dev" && !force {
 		switch semver.Compare(current, target) {
 		case 0:
-			fmt.Fprintf(out, "already up to date (%s)\n", current)
+			_, _ = fmt.Fprintf(out, "already up to date (%s)\n", current)
 			return nil
 		case 1:
-			fmt.Fprintf(out, "running %s, which is newer than latest release %s — nothing to do\n", current, target)
+			_, _ = fmt.Fprintf(out, "running %s, which is newer than latest release %s — nothing to do\n", current, target)
 			return nil
 		}
 	}
 
 	if checkOnly {
 		if current == "dev" {
-			fmt.Fprintf(out, "running a dev build; latest release is %s\n", target)
+			_, _ = fmt.Fprintf(out, "running a dev build; latest release is %s\n", target)
 		} else {
-			fmt.Fprintf(out, "update available: %s -> %s\n", current, target)
+			_, _ = fmt.Fprintf(out, "update available: %s -> %s\n", current, target)
 		}
 		return nil
 	}
@@ -102,20 +102,20 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 		return fmt.Errorf("%s is not writable: %w\nre-run with sudo, or reinstall with install.sh", installDir, err)
 	}
 
-	fmt.Fprintf(out, "downloading figma-map %s for %s/%s...\n", target, runtime.GOOS, runtime.GOARCH)
+	_, _ = fmt.Fprintf(out, "downloading figma-map %s for %s/%s...\n", target, runtime.GOOS, runtime.GOARCH)
 
 	tmpDir, err := os.MkdirTemp("", "figma-map-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	archivePath, binaryName, err := downloadRelease(tmpDir, target)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintln(out, "extracting...")
+	_, _ = fmt.Fprintln(out, "extracting...")
 	extractedBinary, err := extractBinary(archivePath, tmpDir, binaryName)
 	if err != nil {
 		return fmt.Errorf("extract archive: %w", err)
@@ -128,16 +128,16 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 		return fmt.Errorf("stage new binary in %s: %w", installDir, err)
 	}
 	stagedPath := staged.Name()
-	defer os.Remove(stagedPath) // no-op once the rename below succeeds
+	defer func() { _ = os.Remove(stagedPath) }() // no-op once the rename below succeeds
 
 	src, err := os.Open(extractedBinary)
 	if err != nil {
-		staged.Close()
+		_ = staged.Close()
 		return fmt.Errorf("open extracted binary: %w", err)
 	}
 	_, copyErr := io.Copy(staged, src)
-	src.Close()
-	staged.Close()
+	_ = src.Close()
+	_ = staged.Close()
 	if copyErr != nil {
 		return fmt.Errorf("stage new binary: %w", copyErr)
 	}
@@ -152,8 +152,8 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 		return fmt.Errorf("install new binary to %s: %w", installPath, err)
 	}
 
-	fmt.Fprintf(out, "updated %s -> %s (%s)\n", current, target, installPath)
-	fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
+	_, _ = fmt.Fprintf(out, "updated %s -> %s (%s)\n", current, target, installPath)
+	_, _ = fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
 		"(lsof -nP -iTCP:1994 -sTCP:LISTEN, then kill it and let it respawn)")
 	return nil
 }
@@ -163,7 +163,7 @@ func checkWritable(dir string) error {
 	if err != nil {
 		return err
 	}
-	f.Close()
+	_ = f.Close()
 	return os.Remove(f.Name())
 }
 
@@ -184,7 +184,7 @@ func latestReleaseTag() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github api returned %s", resp.Status)
 	}
@@ -239,7 +239,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("http %s", resp.Status)
 	}
@@ -248,7 +248,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = io.Copy(f, resp.Body)
 	return err
 }
@@ -272,7 +272,7 @@ func sha256File(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -286,13 +286,13 @@ func extractBinary(archivePath, destDir, binaryName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return "", err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	tr := tar.NewReader(gz)
 	for {
@@ -313,10 +313,10 @@ func extractBinary(archivePath, destDir, binaryName string) (string, error) {
 			return "", err
 		}
 		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
+			_ = out.Close()
 			return "", err
 		}
-		out.Close()
+		_ = out.Close()
 		return outPath, nil
 	}
 }
