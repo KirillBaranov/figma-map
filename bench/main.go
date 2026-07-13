@@ -11,7 +11,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"image"
@@ -81,7 +80,7 @@ func run(designPath string, width int, outDir string, arms []arm) error {
 
 	for _, a := range arms {
 		fmt.Printf("Rendering %s (%s) …\n", a.name, a.url)
-		pngBytes, err := render.Screenshot(context.Background(), a.url, width)
+		pngBytes, err := render.ScreenshotViewport(a.url, width, dh, 1)
 		if err != nil {
 			return fmt.Errorf("render %s: %w", a.name, err)
 		}
