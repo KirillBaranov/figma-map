@@ -4,6 +4,47 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-13
+
+### Added
+
+- **`figma-map update`** — downloads the latest release for the current
+  platform from GitHub, verifies it against the release's `checksums.txt`,
+  and atomically replaces the running binary in place — no need to
+  re-run `install.sh`. `--check` reports whether a newer version exists
+  without installing; `--force` reinstalls even if already on the target
+  version; `--version vX.Y.Z` pins a specific tag. Windows isn't supported
+  yet (points at the releases page instead). Only updates the CLI binary
+  itself — the bridge backend and Figma plugin still need a manual
+  rebuild/reimport when those changed too, and the skill now tells the
+  agent to reach for it when the CLI seems out of date.
+
+### Changed
+
+- README rewritten to lead with the benchmark visuals and a three-case
+  comparison table (landing hero, landing-hero-2, admin-dashboard: 27-78%
+  closer to the design than an eyeballing agent) instead of a single
+  number, with the actual by-eye-vs-figma-map methodology spelled out and
+  product screenshots for the browser-extension issue flow and the Figma
+  bridge panel. Adds a Troubleshooting section led by the most common
+  support issue (Figma freezes plugin/WebSocket activity when it loses
+  focus or is minimized) and clarifies that only the Figma plugin is a
+  hard requirement — Chrome, Storybook, the OpenAI key, and the browser
+  extension are each optional, gating one specific feature rather than
+  the whole tool. Folder layout, request flow, the full command
+  reference, and honest limitations move to `docs/`, linked at the
+  bottom.
+- Two new benchmark case studies (`bench/cases/landing-hero-2`,
+  `bench/cases/admin-dashboard`), indexed in `bench/README.md` alongside
+  the original landing-hero case.
+
+### Fixed
+
+- The benchmark comparator rendered every arm at a fixed 900px viewport
+  height regardless of the design's actual height, silently cropping
+  anything below that and diffing the crop against the design's real
+  content in that region. Now renders at the design image's own height.
+
 ## [0.5.0] - 2026-07-13
 
 ### Added
