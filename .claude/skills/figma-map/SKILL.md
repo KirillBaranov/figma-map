@@ -34,6 +34,16 @@ Groups: **figma** (read ground truth — find/inspect/selection/pages/tokens/var
 
 ## Before you start
 
+If the CLI seems out of date (a doctor/build/verify op fails in a way that
+matches a fixed bug, or the user mentions a new release), run **`figma-map
+update`** (ungrouped) — downloads the latest release for the current
+platform, verifies its checksum, and replaces the running binary in place.
+`update --check` reports whether a newer version exists without installing
+it. This only updates the `figma-map` binary itself; if the bridge backend
+(`backend/`) or Figma plugin (`extensions/plugin/`) changed too, those still
+need a manual rebuild in the figma-map repo (`bridge up` will rebuild the
+backend; the plugin needs re-importing in Figma).
+
 Run `doctor` (ungrouped, no group prefix). It checks the Figma bridge, headless
 Chrome, Storybook, and the API key — and separately reports whether a Figma
 file is actually connected to the bridge (the bridge process can be up with no
