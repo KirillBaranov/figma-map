@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-13
+
+### Fixed
+
+- `cmd/update.go` shipped in 0.6.0 with 18 unchecked-error lint findings
+  (best-effort stdout writes, deferred `Close`/`Remove`/`RemoveAll` calls),
+  which failed CI on `main` even though the release build itself isn't
+  gated by lint. Explicitly discarded — none were actionable failures.
+
 ## [0.6.0] - 2026-07-13
 
 ### Added
