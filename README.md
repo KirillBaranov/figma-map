@@ -228,14 +228,16 @@ a flat `group_verb` MCP tool name (e.g. `figma_find`) for agents.
 | | `figma selection` | Get the node(s) currently selected in the editor | — |
 | | `figma pages` | List the file's pages — discovery entry point | — |
 | | `figma tokens <nodeId>` | Exact design tokens (color/spacing/font/radius) for a node | — |
+| | `figma animation <nodeId>` | Resolve a node's reactions to actual before/after style deltas | — |
 | | `figma variables` | The file's full Variable catalog (not per-node bindings) | — |
 | **capture** (images) | `capture screenshot <nodeId>` | Render a node to PNG | — |
 | | `capture render <nodeId>` | Screenshot figma-map's own raw codegen output | — |
+| | `capture browser <url> [--selector]` | Screenshot a live URL, optionally cropped to one element | — |
 | | `capture export <nodeId>` | Export a node to SVG/PNG/JPG | — |
 | **build** (code) | `build codegen <nodeId>` | Full TSX for a frame (layout, text, UIKit components) | — |
 | | `build map <nodeId>` | Identify a node's component + props → JSX | ✓ cheap |
 | | `build plan <nodeId>` | Map every instance in a frame → buildable spec | ✓ cheap |
-| **verify** (compare) | `verify pixeldiff <nodeId>` | Pixel-level screenshot comparison + per-region breakdown | — |
+| **verify** (compare) | `verify pixeldiff <nodeId> [--selector]` | Pixel-level screenshot comparison + per-region breakdown | — |
 | | `verify reconcile <nodeId>` | Diff rendered output vs the design (deterministic) | — / opt-in |
 | **setup** (bootstrap) | `setup scan` | Screenshot Storybook stories → `catalog/` | — |
 | | `setup bind` | Match Figma sections to the catalog + infer prop schemas | ✓ once |
@@ -392,8 +394,14 @@ Honest gaps in the current release, not hidden behaviour:
   as `disabled="true"` rather than the idiomatic bare `disabled`. Planned.
 - **Import paths** come from the story source as written; relative imports stay
   relative. Adjust in the binding or normalize to your alias.
-- **Static screenshots only** — hover/focus/active states are not observable, so
-  variants differing only by interaction state cannot be distinguished.
+- **Static screenshots only** — hover/focus/active states are not observable
+  from a screenshot, so a variant differing only by interaction state can't be
+  distinguished by pixels. `figma animation <nodeId>` narrows this for nodes
+  that actually have a prototyping reaction: it resolves the reaction's real
+  destination when there is one (ground truth), or guesses a same-component
+  state-sibling when there isn't (flagged `resolvedVia: "variant-sibling"`,
+  not presented as designer-declared) — either way it's a best-effort style
+  delta for the node you ask about, not general hover-state observation.
 - **reconcile alignment** — design nodes are matched to DOM elements exactly via
   `data-figma-node` when present, otherwise by geometry/type/text so it works on
   an existing, untagged implementation (matched-by-position results are flagged
@@ -421,6 +429,8 @@ Honest gaps in the current release, not hidden behaviour:
   Node fields the bridge fills from a live document (bound-variable resolution
   beyond fills/strokes, prototyping reactions, dev-resources, annotations, grid
   position) aren't mapped from REST yet — left absent, never fabricated.
+  `figma animation` errors the same way `Selection` does — resolving a
+  reaction's before/after state needs the bridge/plugin.
 
 ## Contributing
 

@@ -4,6 +4,58 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-13
+
+### Added
+
+- **`verify pixeldiff --selector`** — scope the implementation-side
+  screenshot to one element (a CSS selector, or a bare Figma node id
+  expanded to `[data-figma-node="<id>"]`) instead of the whole viewport, so
+  a section that lives mid-page can be diffed against its Figma render
+  without setting up isolation for it first. `--width` controls the
+  viewport width used for the scoped page render (default 1280 — a scoped
+  section's layout is usually driven by its page/container width, not its
+  own size, unlike the existing isolated-story path).
+- **`capture browser <url> [--selector]`** — the standalone counterpart:
+  screenshot a live URL (dev server, Storybook iframe, local HTML file),
+  the whole viewport or cropped to one element, for looking at what's
+  currently rendered without comparing it against a Figma node. Same
+  output convention as `capture screenshot`/`capture render` — writes a
+  PNG to `--out`/a default `.figma-map/out/` path, `--inline` for the
+  bytes.
+- **`figma animation <nodeId>`** — resolves a node's prototyping reactions
+  to an actual before/after style delta, not just the trigger/timing
+  `figma tokens`' `reactions` field already carries cheaply for every node.
+  Follows the reaction's real destination when there is one (ground truth,
+  `resolvedVia: "destination"`), or guesses a same-component-set state
+  sibling when there isn't (`resolvedVia: "variant-sibling"`, flagged as a
+  guess rather than presented as designer-declared), then diffs styles into
+  `styleDelta.{from,to}` — enough to write a real CSS `transition`/
+  framer-motion `animate` prop instead of just noting that something
+  hovers. Deliberately a separate, opt-in call rather than part of
+  `reactions`: resolving a destination and diffing full style sets is real
+  async work that shouldn't run for every reaction-bearing node a large-file
+  tree walk happens to touch. Bridge-only for now (errors on the REST
+  source, same as `Selection`).
+- `figma tokens`'/`figma inspect`'s `reactions` field now also carries
+  `destinationId` (the NODE-navigation action's target) — cheap, since it
+  was already being read off the action and discarded.
+
+### Changed
+
+- Skill (`.claude/skills/figma-map/SKILL.md`) rewritten to lead with
+  ownership: figma-map's output (`build plan`'s `jsx`, `build codegen`'s
+  skeleton, a screenshot) is material to work from, not a deliverable —
+  matching the project's own conventions is the agent's job. The
+  absolute-vs-flex, icon-export, and trust-the-numbers guidance now explain
+  the reasoning behind each call (what Figma's canvas coordinates actually
+  imply, why baked vector geometry can't be hand-translated, why a
+  structural layout decision isn't something reconcile's property checks
+  can catch) instead of thresholds to pattern-match against — prompted by a
+  real mis-verst where a decorative, heavily-overlapping icon cluster got
+  forced into an evenly-spaced flex row instead of Figma's literal
+  coordinates.
+
 ## [0.4.0] - 2026-07-10
 
 ### Added
