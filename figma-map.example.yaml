@@ -38,3 +38,10 @@ figma:
   # Environment variable holding a Figma personal access token / Dev Mode
   # token, read only when source is "rest".
   tokenEnv: FIGMA_TOKEN
+
+codegen:
+  # Output renderer for `codegen` when --target isn't passed on the command
+  # line. Supported today: jsx (default), html. More are added over time —
+  # run `figma-map build codegen --help` to see what your installed version
+  # supports.
+  target: jsx

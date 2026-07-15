@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kirillbaranov/figma-map/internal/binding"
+	"github.com/kirillbaranov/figma-map/internal/codegen"
 	"github.com/kirillbaranov/figma-map/internal/figma"
 	"github.com/kirillbaranov/figma-map/internal/storybook"
 )
@@ -211,7 +212,9 @@ func renderMatchedJSX(comp binding.Component, props map[string]string, text stri
 func renderUnmappedJSX(gen *codeGen, inst *figma.Node) string {
 	root := *inst
 	root.Bounds.X, root.Bounds.Y = 0, 0
-	return gen.frame(&root, 0, false, root.Bounds)
+	tree := gen.frame(&root, false, root.Bounds)
+	renderer, _ := codegen.Get("jsx")
+	return renderer.RenderNode(tree, 0)
 }
 
 // instKey identifies "the same" instance for dedupe: name + rounded size.

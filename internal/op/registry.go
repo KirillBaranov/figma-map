@@ -588,22 +588,24 @@ type codegenIn struct {
 	NodeID  string `json:"nodeId" jsonschema:"Figma node id of the frame to generate code for" cli:"arg"`
 	File    string `json:"file,omitempty" jsonschema:"Figma file key (default: config or sole connected file)"`
 	Binding string `json:"binding,omitempty" jsonschema:"binding file for UIKit component mapping" default:"figma-map.binding.yaml"`
+	Target  string `json:"target,omitempty" jsonschema:"Output renderer: jsx (default) or html. Falls back to figma-map.yaml's codegen.target, then jsx."`
 }
 
 var codegenOp = Op[codegenIn, service.CodegenResult]{
 	Group:   "build",
 	Verb:    "codegen",
-	Summary: "Generate a TSX component from a Figma frame (full tree — layout, text, UIKit components)",
-	Long: "codegen walks the entire Figma node tree and emits a ready-to-edit .tsx file. " +
+	Summary: "Generate a component from a Figma frame (full tree — layout, text, UIKit components)",
+	Long: "codegen walks the entire Figma node tree and emits a ready-to-edit component file. " +
 		"Every FRAME becomes a <div> with flex/grid styles from auto-layout, " +
 		"every TEXT node becomes a <span>/<p> with typography styles, " +
 		"and every INSTANCE matched in the binding becomes its UIKit component. " +
-		"Pass a section-level frame (not the whole page) for best results.",
+		"Pass a section-level frame (not the whole page) for best results. " +
+		"--target selects the output renderer (jsx by default); more targets are added over time.",
 	Run: func(ctx context.Context, s *service.Service, in codegenIn) (service.CodegenResult, error) {
-		return s.Codegen(ctx, in.File, in.NodeID, in.Binding)
+		return s.Codegen(ctx, in.File, in.NodeID, in.Binding, in.Target)
 	},
 	Render: func(r service.CodegenResult) string {
-		return r.TSX
+		return r.Code
 	},
 }
 

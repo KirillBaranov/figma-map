@@ -33,6 +33,19 @@ type Config struct {
 
 	// Figma selects and configures the figma.Source backend (ADR-0003 §5).
 	Figma FigmaSourceConfig `yaml:"figma"`
+
+	// Codegen configures the `codegen` operation.
+	Codegen CodegenConfig `yaml:"codegen"`
+}
+
+// CodegenConfig configures the `codegen` operation.
+type CodegenConfig struct {
+	// Target is the default output renderer ("jsx", "html", ...) used when
+	// the caller doesn't pass --target explicitly. Defaults() sets this to
+	// "jsx"; an explicit --target flag still overrides it (see
+	// service.resolveTarget). A blank value in a hand-edited config also
+	// falls back to "jsx" as a safety net.
+	Target string `yaml:"target"`
 }
 
 // FigmaSourceConfig selects which figma.Source implementation to use.
@@ -70,6 +83,9 @@ func Defaults() Config {
 		Figma: FigmaSourceConfig{
 			Source:   "bridge",
 			TokenEnv: "FIGMA_TOKEN",
+		},
+		Codegen: CodegenConfig{
+			Target: "jsx",
 		},
 	}
 }

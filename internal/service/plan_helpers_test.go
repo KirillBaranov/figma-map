@@ -79,12 +79,13 @@ func TestRenderUnmappedJSX(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected non-empty JSX skeleton")
 	}
-	if got != gen.frame(&figma.Node{
+	tree := gen.frame(&figma.Node{
 		ID: "1:1", Type: "INSTANCE", Name: "Chip",
 		Bounds: figma.Bounds{X: 0, Y: 0, Width: 64, Height: 24},
 		Styles: &figma.Style{Fills: figma.MaybePaints{Paints: []figma.Paint{{Type: "SOLID", Color: "#e5e7eb"}}}},
-	}, 0, false, figma.Bounds{Width: 64, Height: 24}) {
-		t.Errorf("expected root bounds reset to origin, got %q", got)
+	}, false, figma.Bounds{Width: 64, Height: 24})
+	if want := renderJSX(t, tree); got != want {
+		t.Errorf("expected root bounds reset to origin, got %q want %q", got, want)
 	}
 }
 

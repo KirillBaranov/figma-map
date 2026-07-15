@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-07-15
+
+### Added
+
+- **`codegen` gets a pluggable output target.** Previously JSX/TSX was the
+  only thing `codegen` could emit — the tree-walk built JSX text directly,
+  and the HTML preview used by `capture`/`pixeldiff` was bolted on via a
+  `codeGen.html bool` checked at every builder call site. Replaced with a
+  real architecture: the tree-walk now builds a target-neutral `ir.Node`
+  tree once (`internal/codegen/ir`), and independent renderer packages
+  under `internal/codegen/targets/*` serialize it — `jsx` (default) and
+  `htmlrender` (the existing preview, now a real second target instead of a
+  bool flag) ship today. Each target self-registers via `init()`, so adding
+  Vue/Svelte/Angular later is a new package + one `Register()` call, with no
+  change to the tree-walk or to other targets.
+- **`--target` flag on `codegen`.** Selects the output renderer explicitly;
+  falls back to the project's `figma-map.yaml` `codegen.target`, then to
+  `jsx`. An unrecognized target errors with the list of currently
+  registered names instead of failing silently.
+- **`codegen.target` in `figma-map.yaml`.** A fresh `figma-map init` now
+  writes a `codegen:` section defaulted to `target: jsx`, with a comment
+  documenting the currently supported renderers — so projects that want a
+  different default (once more targets exist) set it once instead of
+  passing `--target` on every call.
+
+### Changed
+
+- **`CodegenResult.TSX` → `Code`.** The result field is no longer named
+  after a single target; it now carries whichever target's output was
+  requested, alongside a new `Target` field naming which renderer produced
+  it and a `SchemaVersion` field so external CLI/MCP consumers can detect a
+  future breaking change to this result shape instead of silently
+  misparsing it.
+
 ## [0.8.0] - 2026-07-15
 
 ### Added

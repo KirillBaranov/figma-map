@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kirillbaranov/figma-map/internal/codegen"
 	"github.com/kirillbaranov/figma-map/internal/figma"
 	"github.com/kirillbaranov/figma-map/internal/render"
 )
@@ -84,8 +85,10 @@ func previewHTML(node *figma.Node) string {
 	root := *node
 	root.Bounds.X, root.Bounds.Y = 0, 0
 
-	gen := &codeGen{html: true}
-	body := gen.node(&root, 2, false, root.Bounds)
+	gen := &codeGen{}
+	tree := gen.node(&root, false, root.Bounds)
+	renderer, _ := codegen.Get("html")
+	body := renderer.RenderNode(tree, 2)
 	w, h := node.Bounds.Width, node.Bounds.Height
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html>
