@@ -151,6 +151,10 @@ react accordingly instead of guessing or giving up.
    real prop values read off that instance); an unmapped instance's `jsx` is
    the same raw div/span skeleton `build codegen` would emit, a starting
    point rather than bare tokens to compose by eye. This is your blueprint.
+   (`build codegen` itself defaults to this JSX/TSX output; `--target html`
+   is also available — mainly for figma-map's own render/pixeldiff
+   tooling — and more targets may be registered over time, but `plan`'s
+   `jsx` field is always JSX regardless of `codegen`'s configured target.)
 
 2. **Write the code** from the plan:
    - Use the mapped components' `jsx` (or `import`/`symbol`/`props` directly).
