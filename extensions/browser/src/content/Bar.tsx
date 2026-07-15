@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { CompareIcon, CrosshairIcon, InboxIcon, SettingsIcon, Tooltip } from "../kit";
+import { useDraggable, type Pos } from "./hooks/useDraggable";
 
 type Status = "pending" | "connected" | "disconnected";
 type ActiveWindow = "compare" | "issues" | null;
@@ -12,6 +14,9 @@ interface BarProps {
   onToggleCompare: () => void;
   onToggleIssues: () => void;
   onOpenSettings: () => void;
+  // null = default bottom-center CSS position.
+  pos: Pos | null;
+  onPosChange: (pos: Pos | null) => void;
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -20,12 +25,47 @@ const STATUS_LABEL: Record<Status, string> = {
   pending: "checking…"
 };
 
-// Fixed, centered, never draggable (unlike the windows it opens above
-// itself) — always fully visible, no expand/collapse state.
-export function Bar({ status, pending, selecting, activeWindow, onToggleSelect, onToggleCompare, onToggleIssues, onOpenSettings }: BarProps) {
+const FALLBACK_POS: Pos = { x: 20, y: 20 };
+
+// Always fully visible, no expand/collapse state — unlike the windows it
+// opens above itself, this is the only way back to them, so hiding it
+// would strand the user. Draggable instead: the status readout (not the
+// buttons) is the grab handle, so it can be moved out of the way of
+// whatever it's covering. Double-click the handle to reset to the default
+// bottom-center position.
+export function Bar({
+  status,
+  pending,
+  selecting,
+  activeWindow,
+  onToggleSelect,
+  onToggleCompare,
+  onToggleIssues,
+  onOpenSettings,
+  pos,
+  onPosChange
+}: BarProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const drag = useDraggable(onPosChange, FALLBACK_POS);
+
+  function onHandleMouseDown(e: React.MouseEvent) {
+    const rect = rootRef.current?.getBoundingClientRect();
+    const current = pos ?? (rect ? { x: rect.left, y: rect.top } : FALLBACK_POS);
+    drag.startDrag(e, current);
+  }
+
   return (
-    <div className="fm-reset fm-bar-root">
-      <div className="fm-bar-status">
+    <div
+      ref={rootRef}
+      className={`fm-reset fm-bar-root ${drag.dragging ? "fm-bar-dragging" : ""}`}
+      style={pos ? { left: pos.x, top: pos.y, bottom: "auto", transform: "none" } : undefined}
+    >
+      <div
+        className="fm-bar-status fm-bar-handle"
+        onMouseDown={onHandleMouseDown}
+        onDoubleClick={() => onPosChange(null)}
+        title="Drag to move · double-click to reset position"
+      >
         <span className={`fm-dot fm-bar-dot-${status}`} />
         <span>{STATUS_LABEL[status]}</span>
       </div>

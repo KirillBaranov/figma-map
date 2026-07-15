@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HitBounds, HitNode } from "../../lib/hitmap";
 import { clearCompareState, loadCompareState, saveCompareState } from "../../lib/compareSession";
+import type { CompareState as CompareSessionSnapshot } from "../../lib/compareSession";
 import type { Pos } from "./useDraggable";
 
 export interface Size {
@@ -30,11 +31,25 @@ export function useCompareState(defaultNodeId?: string) {
   const [nodeId, setNodeId] = useState(defaultNodeId ?? "");
   const [image, setImage] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<Size | null>(null);
-  const [opacity, setOpacity] = useState(70);
+  // 100 to match diffMode's own invariant (see enterDiffMode in
+  // useFigmaCompare) — diffMode defaults on, and a partial-opacity diff is
+  // just a muddy blend, not a diff.
+  const [opacity, setOpacity] = useState(100);
   const [scale, setScale] = useState(100);
   const [pos, setPos] = useState<Pos>({ x: 80, y: 80 });
   const [hidden, setHidden] = useState(false);
-  const [diffMode, setDiffMode] = useState(false);
+  // Diff mode defaults on (Blend) — it's the primary way this tool is used,
+  // not an extra step to opt into every time.
+  const [diffMode, setDiffMode] = useState(true);
+  // Diff mode has two renderers: the original live mix-blend-mode:
+  // "difference" ("Blend" — cheap, updates every frame, but two near-black
+  // pixels difference to near-black too, hiding misalignment on dark UI),
+  // and the captured-screenshot false-color diff from useDiffSnapshot
+  // ("Contrast" — high-contrast, but a snapshot, and busy on
+  // heavily-antialiased text since font rendering differs from Figma's).
+  // Session-only, not part of the persisted/shared compare session — it's a
+  // display preference, not comparison state.
+  const [diffContrast, setDiffContrast] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draggingOver, setDraggingOver] = useState(false);
@@ -54,7 +69,11 @@ export function useCompareState(defaultNodeId?: string) {
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const [syncScroll, setSyncScroll] = useState(false);
+  // Always on — anchoring the overlay to the document instead of the
+  // viewport is what almost everyone wants while scrolling a real page, so
+  // this isn't a user-facing toggle anymore (see fm-compare-actions in
+  // ComparePanel for the ones that still are).
+  const [syncScroll] = useState(true);
   const [restored, setRestored] = useState(false);
   const [panelPos, setPanelPos] = useState<Pos | null>(null);
 
@@ -77,35 +96,56 @@ export function useCompareState(defaultNodeId?: string) {
       setScale(s.scale);
       setOpacity(s.opacity);
       setDiffMode(s.diffMode);
-      setSyncScroll(s.syncScroll);
+      // syncScroll isn't restored — it's fixed true now regardless of what
+      // an older session persisted (still round-tripped in the schema for
+      // wire compat with existing sessions/history entries).
       if (s.panelPos) setPanelPos(s.panelPos);
       setRestored(true);
     });
   }, []);
 
-  // Debounced persist — drag/arrow-nudge can fire many updates a second,
-  // no need to hit chrome.storage on every one of them.
+  // Debounced persist — drag/arrow-nudge can fire many updates a second, no
+  // need to hit chrome.storage on every one of them. latestSnapshotRef always
+  // holds the up-to-date snapshot regardless of the debounce, so the
+  // unmount-flush effect below can save it immediately even if a change
+  // landed less than 300ms before the panel closed (otherwise that last
+  // edit's setTimeout gets cancelled by unmount and is silently lost).
+  const latestSnapshotRef = useRef<CompareSessionSnapshot | null>(null);
+
   useEffect(() => {
-    if (!restored || !image || !naturalSize) return;
-    const id = setTimeout(() => {
-      saveCompareState({
-        image,
-        naturalW: naturalSize.w,
-        naturalH: naturalSize.h,
-        figmaW: figmaSize?.w,
-        figmaH: figmaSize?.h,
-        fetchedNodeId: fetchedNodeId ?? undefined,
-        nodeId,
-        pos,
-        scale,
-        opacity,
-        diffMode,
-        syncScroll,
-        panelPos: panelPos ?? undefined
-      });
-    }, 300);
+    if (!restored || !image || !naturalSize) {
+      latestSnapshotRef.current = null;
+      return;
+    }
+    latestSnapshotRef.current = {
+      image,
+      naturalW: naturalSize.w,
+      naturalH: naturalSize.h,
+      figmaW: figmaSize?.w,
+      figmaH: figmaSize?.h,
+      fetchedNodeId: fetchedNodeId ?? undefined,
+      nodeId,
+      pos,
+      scale,
+      opacity,
+      diffMode,
+      syncScroll,
+      panelPos: panelPos ?? undefined
+    };
+    const snapshot = latestSnapshotRef.current;
+    const id = setTimeout(() => saveCompareState(snapshot), 300);
     return () => clearTimeout(id);
   }, [restored, image, naturalSize, figmaSize, fetchedNodeId, nodeId, pos, scale, opacity, diffMode, syncScroll, panelPos]);
+
+  // Flushes on actual unmount (panel closed) — not on every dependency
+  // change, since the effect above already covers that debounced. This only
+  // fires once, when the component goes away, and saves whatever the latest
+  // snapshot was even if its own debounce hadn't fired yet.
+  useEffect(() => {
+    return () => {
+      if (latestSnapshotRef.current) saveCompareState(latestSnapshotRef.current);
+    };
+  }, []);
 
   // Live readout so a "design is wider than my screen" zoom mismatch is
   // visible as numbers, not just eyeballed — and updates as Match zoom (or
@@ -151,26 +191,13 @@ export function useCompareState(defaultNodeId?: string) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [image]);
 
-  // Off: the overlay is `position: fixed` — glued to the viewport, ignores
-  // scroll (good while you're actively dragging it into place against
-  // what's currently visible). On: `position: absolute` — anchored to the
-  // document, so it scrolls together with the page underneath it. Convert
-  // pos between the two coordinate spaces so the image doesn't jump when
-  // toggling.
-  function toggleSyncScroll() {
-    const next = !syncScroll;
-    setPos((p) =>
-      next ? { x: p.x + window.scrollX, y: p.y + window.scrollY } : { x: p.x - window.scrollX, y: p.y - window.scrollY }
-    );
-    setSyncScroll(next);
-  }
-
   function clearImage() {
     setImage(null);
     setNaturalSize(null);
     setFigmaSize(null);
     setFetchedNodeId(null);
     setDiffMode(false);
+    setDiffContrast(false);
     setHitTree(null);
     setRootBounds(null);
     setRegion(null);
@@ -186,6 +213,7 @@ export function useCompareState(defaultNodeId?: string) {
     pos, setPos,
     hidden, setHidden,
     diffMode, setDiffMode,
+    diffContrast, setDiffContrast,
     fetching, setFetching,
     error, setError,
     draggingOver, setDraggingOver,
@@ -200,7 +228,7 @@ export function useCompareState(defaultNodeId?: string) {
     note, setNote,
     sending, setSending,
     sent, setSent,
-    syncScroll, toggleSyncScroll,
+    syncScroll,
     panelPos, setPanelPos,
     clearImage
   };

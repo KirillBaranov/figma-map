@@ -119,6 +119,14 @@
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 
+.fm-bar-root.fm-bar-dragging {
+  user-select: none;
+}
+
+.fm-bar-handle {
+  cursor: move;
+}
+
 .fm-bar-status {
   display: flex;
   align-items: center;
@@ -243,7 +251,6 @@
 }
 
 .fm-window.fm-window-dragging {
-  animation: none;
   user-select: none;
 }
 
@@ -291,10 +298,86 @@
 .fm-compare-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .fm-compare-actions .fm-button {
   flex: 1;
+}
+
+.fm-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fm-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fm-section-header-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fm-section-header-toggle svg {
+  transition: transform 0.15s ease;
+}
+
+.fm-section-header-toggle svg.fm-chevron-open {
+  transform: rotate(180deg);
+}
+
+.fm-icon-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.fm-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.fm-icon-btn-bare {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fm-text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--fm-radius-sm);
+}
+
+.fm-icon-btn-bare:hover:not(:disabled) {
+  background: var(--fm-bg-hover);
+  color: var(--fm-text);
+}
+
+.fm-icon-btn-bare:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.fm-spin {
+  animation: fm-spin 0.8s linear infinite;
+}
+
+@keyframes fm-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .fm-compare-error {
@@ -442,30 +525,3 @@
   color: var(--fm-text);
 }
 
-/* The Tooltip wrap span is the thing that needs to be fixed bottom-right —
-   see the history-thumb pin/remove fix above for why this can't live on
-   the button itself once it's wrapped in <Tooltip>. */
-.fm-enable-fab-wrap {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 2147483646;
-}
-
-.fm-enable-fab {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: var(--fm-brand);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
-.fm-enable-fab:hover {
-  background: var(--fm-brand-hover);
-}

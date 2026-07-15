@@ -393,6 +393,12 @@ body {
   font-weight: 600;
 }
 
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .footer-link:hover {
   text-decoration: underline;
 }

@@ -4,6 +4,77 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-15
+
+### Added
+
+- **Browser extension: unified logo/icon.** New indigo overlay-square mark
+  (`assets/logo.svg` / `assets/logo-mark.svg`) used as the extension's
+  toolbar icon (16/32/48/128px, `extensions/browser/icons/`), a small brand
+  touch in the Figma plugin UI's footer link, and the README header. The
+  extension previously had no `icons` in its manifest at all — just a
+  generic placeholder in the toolbar.
+- **Browser extension: collapsible "Overlay compare" window.** A minimize
+  button next to Close collapses the panel to just its title bar instead of
+  unmounting it — keeps in-progress compare state (position, opacity, note)
+  instead of losing it on close/reopen.
+- **Browser extension: draggable status bar.** The fixed bottom bar (status
+  + Select/Compare/Issues/Settings) can now be dragged by its status readout
+  to get it out of the way of page content it's covering; double-click to
+  reset to the default position. Position persists across page loads.
+- **Browser extension: on-site enable is popup-only.** Removed the on-page
+  "+" (`EnableFab`) that appeared on every disabled site — the toolbar
+  popup's existing "Enable on \<host\>" toggle is now the only way in,
+  so a disabled site has zero on-page footprint instead of a floating
+  button.
+- **Browser extension: Issues list gets an explicit delete action.** The
+  existing ack/delete call (already wired to the backend's issue store) was
+  labeled "Mark handled" with a checkmark — relabeled to "Delete" with a
+  trash icon so the action reads correctly.
+
+### Changed
+
+- **Browser extension: Compare panel decluttered.** Sync-scroll (previously
+  a manual toggle) now always on, matching how nearly everyone used it;
+  diff mode defaults on (Blend) instead of requiring an extra click every
+  time; the buggy screenshot-based "Contrast" diff renderer is now gated
+  behind a `CONTRAST_DIFF_ENABLED` flag (off by default) until it's fixed;
+  Scale moved under a collapsible "Advanced" section, Opacity stays on the
+  main panel. Also dropped redundant icon+text pairing on toggle buttons
+  where the text alone already said everything.
+
+### Fixed
+
+- **Browser extension: popup/options pages were silently broken.**
+  `vite-plugin-singlefile` inlined the JS bundle directly into
+  `popup/index.html` / `options/index.html` as an inline `<script>` —
+  which Manifest V3's non-overridable `script-src 'self'` extension-page
+  CSP rejects outright, with no visible error beyond a blank/black popup.
+  Removed the plugin from both configs (external `<script src>`/`<link>`
+  now, which is same-origin and CSP-compliant) and added `base: "./"` so
+  the now-external asset paths resolve correctly against
+  `dist/popup/index.html` / `dist/options/index.html` (Vite's default
+  root-absolute paths would 404 there). This most likely predates this
+  release — nothing in the repo history touched these configs since the
+  initial extraction commit.
+- **Browser extension: popup status flash.** The popup always mounts at
+  "pending" and flips to connected/disconnected moments later once the
+  real bridge ping resolves; the instant background/color swap read as a
+  flicker. Now fades over 150ms.
+- **Browser extension: click-triggered flicker on the compare window.**
+  `.fm-window`'s mount animation was disabled during drag via a
+  `.fm-window-dragging { animation: none }` override — but that class also
+  toggles on/off for a plain click (mousedown immediately followed by
+  mouseup, no movement), and re-enabling a previously-disabled `animation`
+  property restarts it from frame zero. Any click on the window's title bar
+  (including its own Minimize/Close buttons) replayed the entrance
+  animation. Removed the override.
+- **Browser extension: dangling diff-snapshot capture after unmount.**
+  `useDiffSnapshot`'s screenshot capture had no guard against the compare
+  window unmounting mid-capture (e.g. collapsing it, or disabling the site)
+  — the pending `chrome.tabs.captureVisibleTab` promise still resolved and
+  called `setState` on a gone component. Added an `isMounted` ref check.
+
 ## [0.7.0] - 2026-07-15
 
 ### Added

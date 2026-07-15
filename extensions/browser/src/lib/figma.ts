@@ -41,6 +41,16 @@ export async function sendCompareToAgent(input: SendCompareInput): Promise<void>
   }
 }
 
+// Screenshots exactly the bbox the overlay currently occupies, for
+// useDiffSnapshot's amplified diff — no /issues POST, just the pixels.
+export async function captureViewport(bbox: Bbox, dpr: number): Promise<string> {
+  const resp = await sendExtensionMessage({ type: "FIGMA_MAP_CAPTURE_VIEWPORT", bbox, dpr });
+  if (!resp?.ok || !resp.dataUrl) {
+    throw new Error(resp?.error || "failed to capture viewport");
+  }
+  return resp.dataUrl;
+}
+
 // Asks the running Figma plugin what's currently selected, for "Use Figma
 // selection" mode in the overlay.
 export async function getFigmaSelection(fileKey?: string): Promise<HitNode[]> {

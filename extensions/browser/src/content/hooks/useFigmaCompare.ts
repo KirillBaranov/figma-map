@@ -20,6 +20,11 @@ function readImageBlob(blob: Blob): Promise<string> {
   });
 }
 
+// The captured-screenshot "Contrast" diff renderer (useDiffSnapshot) is
+// janky in practice — off until that's actually fixed, so cycleDiffMode
+// below is a plain Off<->Blend toggle. Flip this back on to test it.
+const CONTRAST_DIFF_ENABLED = false;
+
 // Data orchestration for CompareOverlay: everything that talks to Figma (via
 // lib/figma.ts), the clipboard, or dropped files, and everything derived
 // from that (loading an image, resolving a click to a Figma node). Takes
@@ -41,22 +46,44 @@ export function useFigmaCompare(state: CompareState, defaultFileKey?: string) {
     state.setError(null);
   }
 
-  function toggleDiffMode() {
-    state.setDiffMode((on: boolean) => {
-      if (!on) {
-        opacityBeforeDiff.current = state.opacity;
-        state.setOpacity(100); // a partial-opacity diff is just a muddy blend, not a diff
-      } else {
-        state.setOpacity(opacityBeforeDiff.current);
-      }
-      return !on;
-    });
+  function enterDiffMode() {
+    opacityBeforeDiff.current = state.opacity;
+    state.setOpacity(100); // a partial-opacity diff is just a muddy blend, not a diff
+    state.setDiffMode(true);
   }
 
+  function exitDiffMode() {
+    state.setOpacity(opacityBeforeDiff.current);
+    state.setDiffMode(false);
+    state.setDiffContrast(false);
+  }
+
+  // One button cycles Off -> Blend -> Contrast -> Off instead of a
+  // Diff-mode toggle plus a separate Blend/Contrast picker — fewer controls
+  // competing for space in an already button-dense panel. Off -> Blend ->
+  // Off when CONTRAST_DIFF_ENABLED is false (the default).
+  function cycleDiffMode() {
+    if (!state.diffMode) {
+      enterDiffMode(); // -> Blend
+    } else if (CONTRAST_DIFF_ENABLED && !state.diffContrast) {
+      state.setDiffContrast(true); // -> Contrast
+    } else {
+      exitDiffMode(); // -> Off
+    }
+  }
+
+  // Recenters position (at whatever scale is currently set) and resets
+  // opacity — deliberately leaves scale alone. Scale is usually a deliberate
+  // calibration (e.g. via Match zoom), so wiping it back to 100% every time
+  // someone just wants to recenter a dragged-off overlay was the wrong
+  // default.
   function resetView() {
     state.setOpacity(state.diffMode ? 100 : 70);
-    state.setScale(100);
-    if (state.naturalSize) state.setPos(centerPos(state.naturalSize.w, state.naturalSize.h));
+    if (state.naturalSize) {
+      const w = (state.naturalSize.w * state.scale) / 100;
+      const h = (state.naturalSize.h * state.scale) / 100;
+      state.setPos(centerPos(w, h));
+    }
   }
 
   // Manual paste/drop have no Figma metadata and no synchronously-known
@@ -306,7 +333,7 @@ export function useFigmaCompare(state: CompareState, defaultFileKey?: string) {
 
   return {
     loadImage,
-    toggleDiffMode,
+    cycleDiffMode,
     resetView,
     onPaste,
     pasteFromClipboard,

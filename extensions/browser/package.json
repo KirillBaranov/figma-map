@@ -1,7 +1,7 @@
 {
   "name": "figma-map-capture-extension",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite build --watch -c vite.config.popup.ts\" \"vite build --watch -c vite.config.options.ts\" \"vite build --watch -c vite.config.content.ts\" \"vite build --watch -c vite.config.background.ts\"",
@@ -21,7 +21,6 @@
     "@vitejs/plugin-react": "^4.3.2",
     "concurrently": "^9.2.1",
     "typescript": "^5.6.3",
-    "vite": "^5.4.8",
-    "vite-plugin-singlefile": "^2.3.0"
+    "vite": "^5.4.8"
   }
 }

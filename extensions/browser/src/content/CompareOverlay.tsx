@@ -1,5 +1,6 @@
 import { useCompareState } from "./hooks/useCompareState";
 import { useFigmaCompare } from "./hooks/useFigmaCompare";
+import { useDiffSnapshot } from "./hooks/useDiffSnapshot";
 import { useDraggable } from "./hooks/useDraggable";
 import { CompareImage } from "./CompareImage";
 import { ComparePanel } from "./ComparePanel";
@@ -18,6 +19,7 @@ interface CompareOverlayProps {
 export function CompareOverlay({ defaultNodeId, defaultFileKey, onClose }: CompareOverlayProps) {
   const state = useCompareState(defaultNodeId);
   const actions = useFigmaCompare(state, defaultFileKey);
+  const diffSnapshot = useDiffSnapshot(state);
 
   const imageDrag = useDraggable(state.setPos, state.pos);
 
@@ -41,6 +43,8 @@ export function CompareOverlay({ defaultNodeId, defaultFileKey, onClose }: Compa
         opacity={state.opacity}
         hidden={state.hidden}
         diffMode={state.diffMode}
+        diffContrast={state.diffContrast}
+        diffSrc={diffSnapshot.diffSrc}
         syncScroll={state.syncScroll}
         dragging={imageDrag.dragging}
         onImageMouseDown={onImageMouseDown}
@@ -82,9 +86,10 @@ export function CompareOverlay({ defaultNodeId, defaultFileKey, onClose }: Compa
           hidden={state.hidden}
           onToggleHidden={() => state.setHidden((h) => !h)}
           diffMode={state.diffMode}
-          onToggleDiffMode={actions.toggleDiffMode}
-          syncScroll={state.syncScroll}
-          onToggleSyncScroll={state.toggleSyncScroll}
+          diffContrast={state.diffContrast}
+          onCycleDiffMode={actions.cycleDiffMode}
+          diffComputing={diffSnapshot.computing}
+          onRefreshDiff={diffSnapshot.recompute}
           onResetView={actions.resetView}
           onReplace={state.clearImage}
           note={state.note}

@@ -1,7 +1,5 @@
 import { useEffect, useState, type Ref } from "react";
 import { App, type AppHandle } from "./App";
-import { EnableFab } from "./EnableFab";
-import { setHostEnabled } from "../lib/options";
 
 interface SiteGateProps {
   initialEnabled: boolean;
@@ -12,8 +10,10 @@ interface SiteGateProps {
   onOpenSettings: () => void;
 }
 
-// Gates the full bar behind the per-site allowlist (lib/options.ts). Reacts
-// to chrome.storage changes so toggling from the popup takes effect
+// Gates the full bar behind the per-site allowlist (lib/options.ts) — the
+// only way to enable a site is the toolbar popup (popup/App.tsx), so a
+// disabled site renders nothing at all, zero on-page footprint. Reacts to
+// chrome.storage changes so toggling from the popup takes effect
 // immediately, in either direction, without a page reload.
 export function SiteGate({ initialEnabled, hostname, appRef, onToggleSelect, onStopSelect, onOpenSettings }: SiteGateProps) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -28,9 +28,7 @@ export function SiteGate({ initialEnabled, hostname, appRef, onToggleSelect, onS
     return () => chrome.storage.onChanged.removeListener(onChanged);
   }, [hostname]);
 
-  if (!enabled) {
-    return <EnableFab onEnable={() => setHostEnabled(hostname, true)} />;
-  }
+  if (!enabled) return null;
 
   return <App ref={appRef} onToggleSelect={onToggleSelect} onStopSelect={onStopSelect} onOpenSettings={onOpenSettings} />;
 }

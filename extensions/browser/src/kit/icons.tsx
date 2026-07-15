@@ -1,4 +1,4 @@
-import { Blend, Check, Crosshair, Inbox, Pin, Plus, RefreshCw, Settings, X } from "lucide-react";
+import { Blend, Check, ChevronDown, Crosshair, Eye, EyeOff, Inbox, Link2, Minus, Pin, Plus, RefreshCw, RotateCcw, Settings, Trash2, Upload, X } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 
 // Thin re-exports so call sites (Bar, Window, IssuesWindow, ...) depend on
@@ -39,4 +39,38 @@ export function PinIcon(props: LucideProps) {
 
 export function PlusIcon(props: LucideProps) {
   return <Plus size={22} {...props} />;
+}
+
+export function EyeIcon(props: LucideProps) {
+  return <Eye size={14} {...props} />;
+}
+
+export function EyeOffIcon(props: LucideProps) {
+  return <EyeOff size={14} {...props} />;
+}
+
+export function SyncIcon(props: LucideProps) {
+  return <Link2 size={14} {...props} />;
+}
+
+export function ResetIcon(props: LucideProps) {
+  return <RotateCcw size={14} {...props} />;
+}
+
+export function ReplaceIcon(props: LucideProps) {
+  return <Upload size={14} {...props} />;
+}
+
+// Minimize (collapse to title bar). ChevronDownIcon is its "restore"
+// counterpart, shown on the collapsed title bar in place of this one.
+export function MinimizeIcon(props: LucideProps) {
+  return <Minus size={16} {...props} />;
+}
+
+export function ChevronDownIcon(props: LucideProps) {
+  return <ChevronDown size={16} {...props} />;
+}
+
+export function TrashIcon(props: LucideProps) {
+  return <Trash2 size={16} {...props} />;
 }

@@ -17,6 +17,7 @@ import type {
   AckIssueRequest,
   Bbox,
   CaptureRequest,
+  CaptureViewportRequest,
   CompareHistoryEntryData,
   CompareSessionData,
   DeleteCompareHistoryRequest,
@@ -147,6 +148,21 @@ async function handleSendCompare(msg: SendCompareRequest, sender: chrome.runtime
     }),
     opts.bridgeUrl
   );
+}
+
+// Plain screenshot of the bbox the overlay currently occupies, cropped the
+// same way handleCapture/handleSendCompare do — but returned straight to the
+// content script (no /issues POST) so useDiffSnapshot can diff it against
+// the reference image client-side.
+async function handleCaptureViewport(msg: CaptureViewportRequest, sender: chrome.runtime.MessageSender): Promise<{ dataUrl: string }> {
+  const tab = sender.tab;
+  if (!tab?.windowId) {
+    throw new Error("no source tab for capture");
+  }
+
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  const base64 = await cropToBase64(dataUrl, msg.bbox, msg.dpr || 1);
+  return { dataUrl: `data:image/png;base64,${base64}` };
 }
 
 async function handleGetStatus(): Promise<{ connected: boolean; pending: number | null }> {
@@ -443,6 +459,11 @@ const handlers: { [K in ExtensionRequest["type"]]: Handler<Extract<ExtensionRequ
   FIGMA_MAP_SEND_COMPARE: (msg, sender) =>
     handleSendCompare(msg, sender)
       .then(() => ({ ok: true }))
+      .catch((err) => ({ ok: false, error: err instanceof Error ? err.message : String(err) })),
+
+  FIGMA_MAP_CAPTURE_VIEWPORT: (msg: CaptureViewportRequest, sender) =>
+    handleCaptureViewport(msg, sender)
+      .then((result) => ({ ok: true, ...result }))
       .catch((err) => ({ ok: false, error: err instanceof Error ? err.message : String(err) })),
 
   FIGMA_MAP_GET_SELECTION: (msg: GetSelectionRequest) =>

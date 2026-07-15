@@ -148,6 +148,11 @@
   border-radius: var(--fm-radius-md);
   font-size: 11px;
   font-weight: 600;
+  /* The popup always mounts at "pending" and flips to connected/disconnected
+     a beat later once the real bridge ping resolves — an instant background/
+     color swap right at the top of the popup read as a "blink". Fading it
+     softens that without hiding the (real, useful) state change. */
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .fm-status-connected {
@@ -170,6 +175,7 @@
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
+  transition: background-color 0.15s ease;
 }
 
 .fm-status-connected .fm-dot {

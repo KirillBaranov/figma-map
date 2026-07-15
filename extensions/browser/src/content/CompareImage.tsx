@@ -10,6 +10,8 @@ interface CompareImageProps {
   opacity: number;
   hidden: boolean;
   diffMode: boolean;
+  diffContrast: boolean;
+  diffSrc: string | null;
   syncScroll: boolean;
   dragging: boolean;
   onImageMouseDown: (e: React.MouseEvent) => void;
@@ -19,7 +21,11 @@ interface CompareImageProps {
 
 // The overlay's draggable reference image plus the pinned-region highlight
 // — the visual layer of "overlay compare", with no state or data-fetching
-// of its own.
+// of its own. Diff mode has two renderers: "Blend" (live CSS
+// mix-blend-mode, the default) and "Contrast" (diffContrast on) — a
+// pre-rendered false-color diff supplied by useDiffSnapshot. Until the
+// first contrast snapshot lands, this falls back to Blend so there's no
+// blank flash.
 export function CompareImage({
   image,
   naturalSize,
@@ -28,17 +34,20 @@ export function CompareImage({
   opacity,
   hidden,
   diffMode,
+  diffContrast,
+  diffSrc,
   syncScroll,
   dragging,
   onImageMouseDown,
   region,
   rootBounds
 }: CompareImageProps) {
+  const showDiffSnapshot = diffMode && diffContrast && !!diffSrc;
   return (
     <>
       {image && (
         <img
-          src={image}
+          src={showDiffSnapshot ? diffSrc! : image}
           draggable={false}
           onMouseDown={onImageMouseDown}
           className={`fm-compare-image ${dragging ? "fm-compare-dragging" : ""}`}
@@ -49,7 +58,7 @@ export function CompareImage({
             width: naturalSize ? (naturalSize.w * scale) / 100 : undefined,
             height: naturalSize ? (naturalSize.h * scale) / 100 : undefined,
             opacity: hidden ? 0 : opacity / 100,
-            mixBlendMode: diffMode ? "difference" : "normal"
+            mixBlendMode: diffMode && !showDiffSnapshot ? "difference" : "normal"
           }}
         />
       )}

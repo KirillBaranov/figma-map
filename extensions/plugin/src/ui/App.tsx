@@ -473,8 +473,12 @@ export default function App() {
       )}
 
       <div className="footer">
-        <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="footer-link">
-          Figma MAP
+        <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="footer-link footer-brand">
+          <svg width="14" height="14" viewBox="0 0 128 128" aria-hidden="true">
+            <rect x="28" y="44" width="66" height="66" rx="9" fill="none" stroke="currentColor" strokeWidth="7" opacity="0.45" />
+            <rect x="41" y="28" width="66" height="66" rx="9" fill="currentColor" />
+          </svg>
+          figma-map
         </a>
       </div>
     </div>

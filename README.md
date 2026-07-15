@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/logo.svg" width="72" height="72" alt="figma-map logo" />
+
 # figma-map
 
 **The ground-truth layer that lets AI coding agents build pixel-perfect UI from Figma.**

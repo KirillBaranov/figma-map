@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, CheckIcon, RefreshIcon, Tooltip } from "../kit";
+import { Button, RefreshIcon, Tooltip, TrashIcon } from "../kit";
 import { ackIssue, listIssues, type FlaggedIssueData } from "../lib/issues";
 import type { Pos } from "./hooks/useDraggable";
 import { Window } from "./Window";
@@ -82,9 +82,9 @@ export function IssuesWindow({ fileKey, onClose }: IssuesWindowProps) {
             {issue.note && <div className="fm-issue-note">{issue.note}</div>}
             <div className="fm-compare-hint">{timeAgo(issue.createdAt)}</div>
           </div>
-          <Tooltip label="Mark handled" side="bottom">
-            <Button variant="secondary" onClick={() => onAck(issue.id)} disabled={acking === issue.id} aria-label="Ack">
-              <CheckIcon />
+          <Tooltip label="Delete — removes it from this list for good" side="bottom">
+            <Button variant="secondary" onClick={() => onAck(issue.id)} disabled={acking === issue.id} aria-label="Delete">
+              <TrashIcon />
             </Button>
           </Tooltip>
         </div>

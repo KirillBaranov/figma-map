@@ -142,6 +142,20 @@ export interface SendCompareResponse {
   error?: string;
 }
 
+// Used by useDiffSnapshot to build the amplified diff (see lib/diffSnapshot.ts)
+// — a plain screenshot of the bbox the overlay currently occupies, no
+// posting to the bridge (unlike FIGMA_MAP_CAPTURE/FIGMA_MAP_SEND_COMPARE).
+export interface CaptureViewportRequest {
+  type: "FIGMA_MAP_CAPTURE_VIEWPORT";
+  bbox: Bbox;
+  dpr: number;
+}
+export interface CaptureViewportResponse {
+  ok: boolean;
+  error?: string;
+  dataUrl?: string;
+}
+
 export interface GetSelectionRequest {
   type: "FIGMA_MAP_GET_SELECTION";
   fileKey?: string;
@@ -272,6 +286,7 @@ export type ExtensionRequest =
   | GetStatusRequest
   | FetchScreenshotRequest
   | SendCompareRequest
+  | CaptureViewportRequest
   | GetSelectionRequest
   | GetSubtreeRequest
   | MatchZoomRequest
@@ -291,6 +306,7 @@ export interface ExtensionResponseMap {
   FIGMA_MAP_GET_STATUS: GetStatusResponse;
   FIGMA_MAP_FETCH_SCREENSHOT: FetchScreenshotResponse;
   FIGMA_MAP_SEND_COMPARE: SendCompareResponse;
+  FIGMA_MAP_CAPTURE_VIEWPORT: CaptureViewportResponse;
   FIGMA_MAP_GET_SELECTION: GetSelectionResponse;
   FIGMA_MAP_GET_SUBTREE: GetSubtreeResponse;
   FIGMA_MAP_MATCH_ZOOM: MatchZoomResponse;

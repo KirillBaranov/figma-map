@@ -1,10 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Button, TextAreaField, Toast, useToast } from "../kit";
 import { Bar } from "./Bar";
 import { CompareOverlay } from "./CompareOverlay";
 import { IssuesWindow } from "./IssuesWindow";
 import { getStatus } from "../lib/status";
-import { getOptions } from "../lib/options";
+import { getOptions, setBarPos, type BarPos } from "../lib/options";
 
 export interface AppHandle {
   showPanel(opts: { selector: string; x: number; y: number; onSend: (note: string) => void }): void;
@@ -39,6 +39,12 @@ export const App = forwardRef<AppHandle, AppProps>(function App({ onToggleSelect
   const [activeWindow, setActiveWindow] = useState<ActiveWindow>(null);
   const [defaultFigmaNodeId, setDefaultFigmaNodeId] = useState<string | undefined>();
   const [defaultFileKey, setDefaultFileKey] = useState<string | undefined>();
+  // null = default bottom-center CSS position (see .fm-bar-root); a value
+  // means the user dragged it somewhere else. barPosRestored guards the
+  // debounced-persist effect below from firing (and overwriting the saved
+  // position with the default) before the real value has loaded.
+  const [barPos, setBarPosState] = useState<BarPos | null>(null);
+  const [barPosRestored, setBarPosRestored] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -56,8 +62,21 @@ export const App = forwardRef<AppHandle, AppProps>(function App({ onToggleSelect
     getOptions().then((opts) => {
       setDefaultFigmaNodeId(opts.figmaNodeId);
       setDefaultFileKey(opts.fileKey);
+      setBarPosState(opts.barPos);
+      setBarPosRestored(true);
     });
   }, []);
+
+  // Debounced persist, same reasoning as useCompareState's — dragging fires
+  // many updates a second, only the position it settles on is worth a
+  // chrome.storage.sync write.
+  const barPosRef = useRef(barPos);
+  barPosRef.current = barPos;
+  useEffect(() => {
+    if (!barPosRestored) return;
+    const id = setTimeout(() => setBarPos(barPosRef.current), 300);
+    return () => clearTimeout(id);
+  }, [barPos, barPosRestored]);
 
   useImperativeHandle(ref, () => ({
     showPanel(opts) {
@@ -96,6 +115,8 @@ export const App = forwardRef<AppHandle, AppProps>(function App({ onToggleSelect
         onToggleCompare={() => handleToggleWindow("compare")}
         onToggleIssues={() => handleToggleWindow("issues")}
         onOpenSettings={onOpenSettings}
+        pos={barPos}
+        onPosChange={setBarPosState}
       />
       {activeWindow === "compare" && (
         <CompareOverlay

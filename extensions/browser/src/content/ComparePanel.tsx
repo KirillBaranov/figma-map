@@ -1,4 +1,5 @@
-import { Button, TextAreaField, TextField } from "../kit";
+import { useState } from "react";
+import { Button, ChevronDownIcon, RefreshIcon, ReplaceIcon, ResetIcon, TextAreaField, TextField } from "../kit";
 import { CompareHistoryRibbon } from "./CompareHistoryRibbon";
 import type { CompareHistoryEntryData } from "../lib/compareSession";
 import type { Size } from "./hooks/useCompareState";
@@ -26,9 +27,10 @@ interface ComparePanelProps {
   hidden: boolean;
   onToggleHidden: () => void;
   diffMode: boolean;
-  onToggleDiffMode: () => void;
-  syncScroll: boolean;
-  onToggleSyncScroll: () => void;
+  diffContrast: boolean;
+  onCycleDiffMode: () => void;
+  diffComputing: boolean;
+  onRefreshDiff: () => void;
   onResetView: () => void;
   onReplace: () => void;
 
@@ -70,9 +72,10 @@ export function ComparePanel({
   hidden,
   onToggleHidden,
   diffMode,
-  onToggleDiffMode,
-  syncScroll,
-  onToggleSyncScroll,
+  diffContrast,
+  onCycleDiffMode,
+  diffComputing,
+  onRefreshDiff,
   onResetView,
   onReplace,
   note,
@@ -85,6 +88,7 @@ export function ComparePanel({
   regionLabel,
   error
 }: ComparePanelProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   return (
     <>
       <CompareHistoryRibbon onSelect={onSelectHistory} />
@@ -111,6 +115,17 @@ export function ComparePanel({
 
       {image && (
         <>
+          <div className="fm-section-header">
+            <span>Align</span>
+            <div className="fm-icon-actions">
+              <button className="fm-icon-btn-bare" onClick={onResetView} title="Recenter position and reset opacity (keeps scale)">
+                <ResetIcon />
+              </button>
+              <button className="fm-icon-btn-bare" onClick={onReplace} title="Replace reference image">
+                <ReplaceIcon />
+              </button>
+            </div>
+          </div>
           {figmaSize && (
             <div className="fm-compare-zoom">
               <div className="fm-range-label">
@@ -136,38 +151,55 @@ export function ComparePanel({
             value={opacity}
             onChange={(e) => setOpacity(Number(e.target.value))}
           />
-          <div className="fm-range-label">
-            <span>Scale</span>
-            <span>{scale}%</span>
-          </div>
-          <input
-            className="fm-range"
-            type="range"
-            min={25}
-            max={200}
-            value={scale}
-            onChange={(e) => setScale(Number(e.target.value))}
-          />
-          <div className="fm-compare-actions">
-            <Button variant="secondary" onClick={onToggleHidden}>
-              {hidden ? "Show" : "Hide"}
-            </Button>
-            <Button variant={diffMode ? "primary" : "secondary"} onClick={onToggleDiffMode}>
-              Diff mode
-            </Button>
-          </div>
-          <Button variant={syncScroll ? "primary" : "secondary"} onClick={onToggleSyncScroll}>
-            {syncScroll ? "Sync scroll: on" : "Sync scroll: off"}
-          </Button>
           <div className="fm-compare-hint">↑↓←→ nudge 1px · Shift = 10px</div>
-          <div className="fm-compare-actions">
-            <Button variant="secondary" onClick={onResetView}>
-              Reset
-            </Button>
-            <Button variant="secondary" onClick={onReplace}>
-              Replace
-            </Button>
+
+          <div className="fm-section-header">
+            <span>Compare</span>
           </div>
+          <div className="fm-compare-actions">
+            <Button variant={hidden ? "primary" : "secondary"} onClick={onToggleHidden}>
+              {hidden ? "Hidden" : "Visible"}
+            </Button>
+            <Button variant={diffMode ? "primary" : "secondary"} onClick={onCycleDiffMode}>
+              {!diffMode ? "Diff mode" : diffContrast ? "Diff: Contrast" : "Diff: Blend"}
+            </Button>
+            {diffMode && diffContrast && (
+              <button
+                className="fm-icon-btn-bare"
+                onClick={onRefreshDiff}
+                disabled={diffComputing}
+                title="Re-capture and re-diff"
+              >
+                <RefreshIcon className={diffComputing ? "fm-spin" : undefined} />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="fm-section-header fm-section-header-toggle"
+            onClick={() => setAdvancedOpen((v) => !v)}
+          >
+            <span>Advanced</span>
+            <ChevronDownIcon className={advancedOpen ? "fm-chevron-open" : undefined} />
+          </button>
+          {advancedOpen && (
+            <>
+              <div className="fm-range-label">
+                <span>Scale</span>
+                <span>{scale}%</span>
+              </div>
+              <input
+                className="fm-range"
+                type="range"
+                min={25}
+                max={200}
+                value={scale}
+                onChange={(e) => setScale(Number(e.target.value))}
+              />
+            </>
+          )}
+
           <TextAreaField
             label="Note for the agent (optional)"
             placeholder="e.g. 'aligned, but title block sits ~2px low'"

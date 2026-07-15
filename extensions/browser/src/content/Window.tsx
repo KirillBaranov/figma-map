@@ -1,5 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { CloseIcon, Tooltip } from "../kit";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronDownIcon, CloseIcon, MinimizeIcon, Tooltip } from "../kit";
 import { useDraggable, type Pos } from "./hooks/useDraggable";
 
 interface WindowProps {
@@ -35,6 +35,11 @@ export function Window({
 }: WindowProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const drag = useDraggable(onPosChange, FALLBACK_POS);
+  // Collapse just hides the body — the window keeps its state (in-progress
+  // compare, unsent note) instead of unmounting like a close would.
+  // Session-only: always reopens expanded, same as every other transient UI
+  // state in this file.
+  const [collapsed, setCollapsed] = useState(false);
 
   // Same reasoning as the old CompareOverlay: nothing grabs focus just by
   // rendering this panel, so without it Cmd+V does nothing because the host
@@ -61,13 +66,25 @@ export function Window({
     >
       <div className="fm-window-title" onMouseDown={onTitleMouseDown}>
         <span>{title}</span>
-        <Tooltip label="Close" side="bottom">
-          <button type="button" className="fm-window-close" onClick={onClose} aria-label="Close">
-            <CloseIcon />
-          </button>
-        </Tooltip>
+        <div className="fm-icon-actions">
+          <Tooltip label={collapsed ? "Expand" : "Collapse"} side="bottom">
+            <button
+              type="button"
+              className="fm-window-close"
+              onClick={() => setCollapsed((v) => !v)}
+              aria-label={collapsed ? "Expand" : "Collapse"}
+            >
+              {collapsed ? <ChevronDownIcon /> : <MinimizeIcon />}
+            </button>
+          </Tooltip>
+          <Tooltip label="Close" side="bottom">
+            <button type="button" className="fm-window-close" onClick={onClose} aria-label="Close">
+              <CloseIcon />
+            </button>
+          </Tooltip>
+        </div>
       </div>
-      <div className="fm-window-body">{children}</div>
+      {!collapsed && <div className="fm-window-body">{children}</div>}
     </div>
   );
 }

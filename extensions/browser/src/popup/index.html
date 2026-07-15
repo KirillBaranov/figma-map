@@ -3,6 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <title>figma-map Capture</title>
+    <!-- Inline (not the external stylesheet) so the popup paints dark on
+         the very first frame — Chrome popups load fresh every open, no
+         cache benefit, so without this there's a visible white->dark flash
+         while style.css is still being fetched. Inline <style> is fine
+         under MV3's extension_pages CSP (only script-src is restricted). -->
+    <style>
+      html, body { background: #1e1e1e; color-scheme: dark; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
