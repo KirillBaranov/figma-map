@@ -267,6 +267,14 @@ and a human dev can't hit it either.
 - **`figma inspect <nodeId> [--tokens] [--depth N]`** — the node subtree
   (structure, text, bounds, optionally tokens/reactions/devResources/annotations).
   Use to understand a design's shape.
+  - A `TEXT_PATH` node ("Text on Path") gets a `textPath` field: `vectorPaths`
+    is the actual curve the text flows along, as ready-to-use SVG path data
+    (Figma's `M`/`L`/`Q`/`C`/`Z` subset), and `textPathStartData` says where
+    along it the text begins (`segment` + `position` 0-1). Don't try to
+    reconstruct this curve by eyeballing a screenshot or exporting the node
+    (export flattens it to per-glyph outlines, no curve left) — it's just
+    there in `inspect`. Build a real `<textPath href="#...">` from
+    `vectorPaths[0].data` instead.
 - **`figma find <query>`** — search nodes by name/text/type; surfaces `devStatus`
   so you can filter to frames actually marked ready for dev.
 - **`figma selection`** — the node(s) currently selected in the Figma editor.

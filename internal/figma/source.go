@@ -56,6 +56,33 @@ type Node struct {
 	// own order. `export-assets` defaults to the first one when present,
 	// instead of guessing format/scale.
 	ExportSettings []ExportSetting `json:"exportSettings,omitempty"`
+	// TextPath is set only on TEXT_PATH nodes ("Text on Path") — the curve
+	// the text flows along, as SVG path data. The Plugin API exposes it
+	// (TextPathNode.vectorPaths) even though it's absent from every other
+	// surface (REST, Dev Mode, static SVG export flattens it into per-glyph
+	// outlines instead), so without this the curve looked unrecoverable
+	// short of eyeballing it against a screenshot.
+	TextPath *TextPath `json:"textPath,omitempty"`
+}
+
+// TextPath is the curve a TEXT_PATH node's text flows along.
+type TextPath struct {
+	VectorPaths       []VectorPath      `json:"vectorPaths"`
+	TextPathStartData TextPathStartData `json:"textPathStartData"`
+}
+
+// VectorPath is one path segment in Figma's reduced SVG path-data dialect
+// (M/L/Q/C/Z only — see Figma's VectorPath docs).
+type VectorPath struct {
+	WindingRule string `json:"windingRule"`
+	Data        string `json:"data"`
+}
+
+// TextPathStartData locates where a TEXT_PATH node's text begins along its
+// curve: which path segment, and how far (0-1) along that segment.
+type TextPathStartData struct {
+	Segment  int     `json:"segment"`
+	Position float64 `json:"position"`
 }
 
 // DevResource is one designer-attached dev-resource link.

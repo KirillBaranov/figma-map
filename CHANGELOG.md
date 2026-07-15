@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-15
+
+### Added
+
+- **`figma inspect` surfaces `TEXT_PATH` curve data.** Figma's "Text on
+  Path" nodes have no curve visible through REST, Dev Mode, or static SVG
+  export (export flattens the text into per-glyph outlines, no path left) —
+  but the Plugin API exposes it as `vectorPaths`/`textPathStartData`, just
+  undeclared in the node's typed geometry those other surfaces mirror.
+  `inspect` now returns it as a `textPath` field (`vectorPaths[0].data` is
+  ready-to-use SVG path data), so the agent can build a real
+  `<textPath href="#...">` instead of eyeballing the curve from a
+  screenshot.
+
 ## [0.6.1] - 2026-07-13
 
 ### Fixed

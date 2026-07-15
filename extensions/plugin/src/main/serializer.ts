@@ -159,6 +159,15 @@ export type SerializedNode = {
   devResources?: { name: string; url: string }[];
   annotations?: string[];
   exportSettings?: ExportPreset[];
+  // Only set on TEXT_PATH nodes ("Text on Path"). vectorPaths carries the
+  // actual curve the text flows along as SVG path data — the Plugin API
+  // exposes it (TextPathNode.vectorPaths), it's just absent from the node's
+  // typed geometry that REST/Dev Mode surface, so without this the curve
+  // looked unrecoverable short of eyeballing it from a screenshot.
+  textPath?: {
+    vectorPaths: { windingRule: string; data: string }[];
+    textPathStartData: { segment: number; position: number };
+  };
 };
 
 const isSymbol = (value: unknown): value is symbol => typeof value === "symbol";
@@ -497,7 +506,7 @@ function nodeBounds(node: SceneNode): NodeBounds | undefined {
   return { x: node.x, y: node.y, width: node.width, height: node.height };
 }
 
-async function withTextFields(node: TextNode, base: SerializedNode) {
+async function withTextFields(node: TextNode | TextPathNode, base: SerializedNode) {
   let fontFamily: string | undefined;
   let fontStyle: string | undefined;
   if (isSymbol(node.fontName)) {
@@ -516,9 +525,16 @@ async function withTextFields(node: TextNode, base: SerializedNode) {
       fontFamily,
       fontStyle,
       fontWeight: isSymbol(node.fontWeight) ? "mixed" : node.fontWeight,
-      textDecoration: isSymbol(node.textDecoration) ? "mixed" : node.textDecoration,
+      // textDecoration/lineHeight aren't part of BaseNonResizableTextMixin,
+      // so TEXT_PATH nodes don't carry them.
+      textDecoration:
+        "textDecoration" in node
+          ? isSymbol(node.textDecoration)
+            ? "mixed"
+            : node.textDecoration
+          : undefined,
       textCase: isSymbol(node.textCase) ? "mixed" : node.textCase,
-      lineHeight: serializeLineHeight(node.lineHeight),
+      lineHeight: "lineHeight" in node ? serializeLineHeight(node.lineHeight) : undefined,
       letterSpacing: serializeLetterSpacing(node.letterSpacing),
       textAlignHorizontal: isSymbol(node.textAlignHorizontal)
         ? "mixed"
@@ -526,7 +542,22 @@ async function withTextFields(node: TextNode, base: SerializedNode) {
       textAlignVertical: isSymbol(node.textAlignVertical)
         ? "mixed"
         : node.textAlignVertical,
-      textAutoResize: node.textAutoResize,
+      // TEXT_PATH nodes don't resize (BaseNonResizableTextMixin has no
+      // textAutoResize) — only real TextNodes have this field.
+      textAutoResize: "textAutoResize" in node ? node.textAutoResize : undefined,
+    },
+  };
+}
+
+function withTextPathFields(node: TextPathNode, base: SerializedNode): SerializedNode {
+  return {
+    ...base,
+    textPath: {
+      vectorPaths: node.vectorPaths.map((p) => ({ windingRule: p.windingRule, data: p.data })),
+      textPathStartData: {
+        segment: node.textPathStartData.segment,
+        position: node.textPathStartData.position,
+      },
     },
   };
 }
@@ -1044,6 +1075,9 @@ async function serializeNodeShallow(
 ): Promise<SerializedNode> {
   const base = lean ? leanBase(node) : await fullBase(node, cache, pool);
   if (node.type === "TEXT" && !lean) return withTextFields(node, base);
+  if (node.type === "TEXT_PATH" && !lean) {
+    return withTextPathFields(node, await withTextFields(node, base));
+  }
   return base;
 }
 

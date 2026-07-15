@@ -15,6 +15,13 @@ import pkg from "../../package.json";
 
 const PLUGIN_VERSION: string = pkg.version;
 
+// Debug-only escape hatch for poking at raw plugin node objects (e.g.
+// finding untyped/undocumented properties Figma hasn't caught up on in its
+// public typings — this is how vectorPaths/textPathStartData on TEXT_PATH
+// nodes got discovered). Off by default: flip to true and rebuild when
+// you need it again, then flip back — never ship it enabled.
+const DEBUG_TOOLS_ENABLED = false;
+
 type RequestType =
   | "get_document"
   | "get_selection"
@@ -46,7 +53,8 @@ type RequestType =
   | "ungroup_node"
   | "set_selection"
   | "scroll_and_zoom_into_view"
-  | "delete_nodes";
+  | "delete_nodes"
+  | "debug_dump_node";
 
 type ServerRequestParams = Record<string, unknown> & {
   format?: "PNG" | "SVG" | "JPG" | "PDF";
@@ -1662,6 +1670,7 @@ const HANDLERS: { [K in RequestType]: (request: ServerRequest) => Promise<unknow
   set_selection: handleSetSelection,
   scroll_and_zoom_into_view: handleScrollAndZoomIntoView,
   delete_nodes: handleDeleteNodes,
+  debug_dump_node: handleDebugDumpNode,
 };
 
 // Cache of recently-answered requestIds so a retried request (backend
@@ -1693,6 +1702,66 @@ function cacheResponse(response: PluginResponse): void {
     const oldest = responseCache.keys().next().value;
     if (oldest != undefined) responseCache.delete(oldest);
   }
+}
+
+// TEMP debug-only handler: walks the prototype chain of a live plugin node
+// object (not the typed SceneNode fields we normally serialize) looking for
+// any hidden property that might carry Text-on-Path curve data, since the
+// public Plugin API typings may simply not have caught up with this newer
+// Figma feature. Not wired into any permanent tool surface — remove after
+// the experiment.
+async function handleDebugDumpNode(request: ServerRequest) {
+  if (!DEBUG_TOOLS_ENABLED) {
+    throw new Error(
+      "debug_dump_node is disabled — flip DEBUG_TOOLS_ENABLED in code.ts and rebuild to use it"
+    );
+  }
+  const nodeId = request.nodeIds?.[0];
+  if (!nodeId) throw new Error("nodeIds is required for debug_dump_node");
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+
+  const seen = new Set<string>();
+  let proto: unknown = node;
+  const propertyNames: string[] = [];
+  while (proto && proto !== Object.prototype) {
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        propertyNames.push(name);
+      }
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  propertyNames.sort();
+
+  const values: Record<string, unknown> = {};
+  for (const name of propertyNames) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const value = (node as any)[name];
+      if (typeof value === "function") {
+        values[name] = "[function]";
+      } else if (typeof value === "symbol") {
+        values[name] = `[symbol ${String(value)}]`;
+      } else if (Array.isArray(value)) {
+        values[name] = `[array len=${value.length}]${value.length > 0 ? " " + JSON.stringify(value.slice(0, 3)) : ""}`;
+      } else if (value && typeof value === "object") {
+        try {
+          const json = JSON.stringify(value);
+          values[name] = json.length > 500 ? json.slice(0, 500) + "…(truncated)" : json;
+        } catch {
+          values[name] = "[unserializable object]";
+        }
+      } else {
+        values[name] = value;
+      }
+    } catch (error) {
+      values[name] = `[error reading: ${error instanceof Error ? error.message : String(error)}]`;
+    }
+  }
+
+  return { nodeId, propertyNames, values };
 }
 
 async function handleRequest(request: ServerRequest): Promise<PluginResponse> {

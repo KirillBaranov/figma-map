@@ -29,6 +29,10 @@ type InspectNode struct {
 	// opt-in, never auto-applied, but a strong human-given hint to read.
 	DevResources []figma.DevResource `json:"devResources,omitempty"`
 	Annotations  []string            `json:"annotations,omitempty"`
+	// TextPath is only set on TEXT_PATH nodes — the curve the text flows
+	// along. Always populated when present, independent of withTokens: it's
+	// structural ground truth (like Bounds), not opt-in style detail.
+	TextPath *figma.TextPath `json:"textPath,omitempty"`
 }
 
 // InspectResult is the `inspect` output: a flat, pre-order list of nodes.
@@ -56,7 +60,7 @@ func flatten(res *InspectResult, n *figma.Node, parentID string, cur int, withTo
 	item := InspectNode{
 		ID: n.ID, ParentID: parentID, Depth: cur,
 		Name: n.Name, Type: n.Type, Text: n.Characters, Bounds: n.Bounds,
-		ChildCount: n.ChildCount,
+		ChildCount: n.ChildCount, TextPath: n.TextPath,
 	}
 	if withTokens {
 		item.Tokens = tokensFromStyle(n.Styles)
