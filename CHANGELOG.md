@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-07-15
+
+### Added
+
+- **`figma-map-setup` agent skill** (`.claude/skills/figma-map-setup/SKILL.md`)
+  — a self-contained bootstrap guide an agent can read and follow to install
+  the CLI, start the bridge, walk the human through the one-time Figma
+  plugin load, run `init`, and register itself as an MCP server (Claude
+  Code, Cursor, Codex CLI) without the human touching a terminal.
+
+### Changed
+
+- **README restructured around a single new-user path**: install → what it
+  is / how it works → optional add-ons → reference (manual install,
+  troubleshooting, roadmap, docs). Removed the three overlapping copies of
+  the setup steps ("Try it in 5 minutes" / "Install" / "Full quick start")
+  in favor of one agent-first install section that points at the new setup
+  skill, with manual steps and MCP config kept as a linked reference further
+  down instead of repeated inline.
+
 ## [0.9.0] - 2026-07-15
 
 ### Added

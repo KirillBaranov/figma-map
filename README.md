@@ -6,11 +6,8 @@
 
 **The ground-truth layer that lets AI coding agents build pixel-perfect UI from Figma.**
 
-Agents that build from a screenshot guess. figma-map gives them exact
-structure and tokens to build from, and a closed verify loop — render the
-implementation, diff its real DOM against the design's exact values — so the
-agent knows precisely what's still wrong instead of eyeballing "looks about
-right."
+Not a screenshot to eyeball — exact structure, exact tokens, and a closed
+verify loop that tells an agent precisely what's still wrong, until it isn't.
 
 [![CI](https://github.com/KirillBaranov/figma-map/actions/workflows/ci.yml/badge.svg)](https://github.com/KirillBaranov/figma-map/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/kirillbaranov/figma-map.svg)](https://pkg.go.dev/github.com/kirillbaranov/figma-map)
@@ -36,7 +33,31 @@ right."
 
 </div>
 
-<p align="center">Same agent, same model, same prompt, same shared assets — only the tool differs. <strong>By eye:</strong> the agent gets a screenshot and "build this." <strong>figma-map:</strong> the agent gets the Figma selection through the bridge, builds from figma-map's tokens/plan, then renders and compares its own output with figma-map's <code>reconcile</code> (plus its own browser MCP tools) until the diff closes. The score itself is not figma-map's — a plain, independent pixel diff against the reference image, so it can't be biased toward the treatment arm. <a href="bench/README.md">Method & caveats →</a></p>
+<p align="center">Same agent, same model, same prompt, same shared assets — only the tool differs. The score is an independent pixel diff against the reference image, not figma-map's own — it can't be biased toward the treatment arm. <a href="bench/README.md">Method & caveats →</a></p>
+
+## Install
+
+The fastest way: your agent installs itself.
+
+```bash
+git clone https://github.com/KirillBaranov/figma-map
+```
+
+Then tell your agent (Claude Code, Cursor, Codex CLI, …):
+
+> Read `figma-map/.claude/skills/figma-map-setup/SKILL.md` and follow it to
+> set up figma-map in this project.
+
+It installs the CLI, starts the bridge, runs `init`, and registers itself as
+an MCP server for you — pausing only once, to ask you to load the Figma
+plugin (the one step no agent can do on your behalf).
+
+<p align="center"><img src="docs/screenshots/figma-plugin-screen.png" width="80%" alt="Figma MAP Bridge plugin panel, connected, with the ready-to-paste agent prompt" /></p>
+
+<p align="center"><em>Connected — and it already wrote the exact prompt for your agent: file, selection, node id.</em></p>
+
+Prefer to do it by hand, or need the exact MCP config for Claude Code /
+Cursor / Codex CLI? → [Manual install](#manual-install) below.
 
 ## What it is
 
@@ -48,50 +69,20 @@ right."
         { "prop": "padding-left", "is": "12px", "should": "16px" } ] } ] }
 ```
 
-That's the primitive everything else is built on: not "does this look
-right," but *exactly* which element, which property, which value — an agent
-can act on that and loop until it's gone.
+Not "does this look right," but *exactly* which element, which property,
+which value — an agent can act on that and loop until it's gone.
 
 - **A closed verify loop, not a screenshot to eyeball.** figma-map renders your
   implementation, reads its actual DOM, and diffs computed styles against the
-  design's exact tokens — per-element `is → should` numbers the agent can fix,
-  not vibes to interpret.
-- **Ground truth before vision, everywhere.** Structure, tokens, and component
-  identity are read straight from Figma's data model whenever it has the
-  answer. A vision model only steps in for the one question Figma's data can't
-  answer — *which code component is this?* — never as the default.
-- **AI runs once, codegen runs forever.** That one vision-dependent question is
-  answered once, into a reviewable binding file. Every generation and
-  verification pass after that is deterministic, repeatable, CI-friendly code —
-  no LLM in the hot path.
-- **MCP-native.** Point an agent (Claude Code, Cursor, …) at it and it gets the
-  full CLI as typed tools, identical surface, zero drift.
-- **Closes the loop on live pages too.** A browser extension lets a human flag
-  a mismatch on a running page and link it straight to its Figma node — the
-  agent picks that up as structured ground truth, never a raw pixel guess.
-
-<div align="center">
-<img src="docs/screenshots/browser-plugin-select-issue.png" width="49%" alt="flagging a live-page mismatch and linking it to a Figma node" />
-<img src="docs/screenshots/browser-plugin-diff-mode.png" width="49%" alt="overlay diff mode comparing the live page against the design" />
-</div>
-
-<p align="center"><em>A human clicks the element that's off, notes what's wrong, and sends it — the agent gets a Figma node id and bounds, not "the card looks weird."</em></p>
-
-## Why
-
-Pointing an agent at a Figma screenshot and asking it to "build this" mostly
-works — until it doesn't, and there's no way to tell *how far off* without a
-human eyeballing a diff. The agent picked a color close enough, a padding
-that's 4px short, the wrong variant of your `<Button>` — and nothing in the
-loop can tell it that, so it stops when it *looks* done, not when it *is*
-done.
-
-figma-map closes that loop. It reads Figma's actual data — not a rendered
-picture of it — for structure, tokens, and (via a one-time binding) component
-identity, and it can re-render the agent's own output and diff it against
-that same ground truth, property by property. The agent gets exact numbers to
-fix, not vibes to interpret, so the loop actually converges on the design
-instead of stalling on "close enough."
+  design's exact tokens — per-element `is → should` numbers, not vibes.
+- **Ground truth before vision.** Structure, tokens, and component identity
+  are read straight from Figma's data model. A vision model only steps in for
+  the one thing Figma's data can't answer — *which code component is this?*
+- **AI runs once, codegen runs forever.** That one vision-dependent question
+  is answered once, into a reviewable binding file. Every generation and
+  verification pass after that is deterministic, no LLM in the hot path.
+- **MCP-native.** Point an agent at it and it gets the full CLI as typed
+  tools, identical surface, zero drift.
 
 ## How it works
 
@@ -105,25 +96,49 @@ instead of stalling on "close enough."
 5. The agent **fixes the exact properties** and loops from step 3 until
    everything matches.
 
-A ready-made agent skill ships in [`.claude/skills/figma-map`](.claude/skills/figma-map/SKILL.md)
-that teaches Claude Code this loop automatically. For the full request-flow
-diagrams and the "ground truth before vision" decision tree, see
-[docs/architecture.md](docs/architecture.md).
-
-### Component identity, solved once
-
 The one place vision is unavoidable is matching a Figma instance to *your*
-code component — Figma's data model has no field for "this is our
-`<Button>`." figma-map solves it once, up front, into a reviewable
-`figma-map.binding.yaml` you can correct by hand. Every generation after that
-is deterministic:
+code component — figma-map solves that once, up front, into a reviewable
+`figma-map.binding.yaml`:
 
 ```text
 Storybook ──scan──▶ catalog (screenshots + import paths, no AI)
 Figma ──bind (vision LLM, once)──▶ figma-map.binding.yaml ──review──▶ map (deterministic) ──▶ JSX
 ```
 
-## Install
+A ready-made skill at [`.claude/skills/figma-map`](.claude/skills/figma-map/SKILL.md)
+teaches an agent this whole loop automatically. For request-flow diagrams and
+the full "ground truth before vision" decision tree, see
+[docs/architecture.md](docs/architecture.md).
+
+## Optional add-ons
+
+Neither of these is required to get value from figma-map — they add specific
+capabilities on top.
+
+**Browser extension** — lets a human flag a mismatch on a running page and
+link it straight to its Figma node, instead of a screenshot and a paragraph
+of description. Also gives you a pixel-perfect overlay diff with automatic
+scaling, right in the browser.
+
+<div align="center">
+<img src="docs/screenshots/browser-plugin-select-issue.png" width="49%" alt="flagging a live-page mismatch and linking it to a Figma node" />
+<img src="docs/screenshots/browser-plugin-diff-mode.png" width="49%" alt="overlay diff mode comparing the live page against the design" />
+</div>
+
+<p align="center"><em>A human clicks the element that's off, notes what's wrong, and sends it — the agent gets a Figma node id and bounds, not "the card looks weird."</em></p>
+
+**Storybook + a vision LLM key** — only needed for matching a Figma instance
+to *your* code component (`setup scan` / `setup bind` / `build map`). Reading
+tokens/structure from Figma, and the reconcile verify loop, work without
+either.
+
+```bash
+figma-map setup scan --project /path/to/storybook-project   # catalog, no AI
+figma-map setup bind                                        # match + write binding, AI, once
+figma-map build map 13:1077                                 # generate code for any node
+```
+
+## Manual install
 
 ### 1. Install the CLI
 
@@ -138,13 +153,12 @@ to pin a tag, or `FIGMA_MAP_INSTALL_DIR=~/bin` to choose the directory.
 Alternatives: `go install github.com/kirillbaranov/figma-map@latest`, or grab
 a prebuilt archive from the [releases page](https://github.com/KirillBaranov/figma-map/releases).
 
-**Updating:** once installed, `figma-map update` fetches the latest release
-for your platform, verifies its checksum, and replaces the running binary in
-place — no need to re-run the install script. `figma-map update --check`
-just reports whether a newer version exists; `figma-map update --version
-v0.6.0` pins a specific tag.
+**Updating:** `figma-map update` fetches the latest release for your
+platform, verifies its checksum, and replaces the running binary in place.
+`figma-map update --check` just reports whether a newer version exists;
+`--version v0.6.0` pins a specific tag.
 
-### 2. Load the bridge plugin in Figma
+### 2. Start the bridge and load the Figma plugin
 
 The bridge is what lets figma-map read your open Figma file directly, with no
 API token and no rate limits.
@@ -162,14 +176,34 @@ Then, **once**, load the plugin into Figma:
    over WebSocket to the backend you just started and stays connected while
    the file is open.
 
-<p align="center"><img src="docs/screenshots/figma-plugin-screen.png" width="80%" alt="Figma MAP Bridge plugin panel, connected, with the ready-to-paste agent prompt" /></p>
+### 3. Wire it into your project
 
-<p align="center"><em>Connected, and it already wrote the exact prompt for your agent — file, selection, node id.</em></p>
+```bash
+figma-map init /path/to/your/project          # skill, figma-map.yaml, MCP registration, CLAUDE.md
+cd /path/to/your/project && figma-map doctor  # verify bridge, chrome, storybook, key
+```
 
-### 3. (Optional) Load the browser extension
+`init` registers figma-map as an MCP server in the target project's
+`.mcp.json` (merged in, existing servers untouched), and never clobbers
+what's already there — it prints exactly what it's about to create/change
+and asks for confirmation first (`-y` to skip that for scripts).
 
-Lets a human flag a mismatch on a running page and hand it to the agent as a
-Figma-linked issue, instead of a screenshot and a paragraph of description.
+```json
+{ "mcpServers": { "figma-map": { "command": "/path/to/figma-map", "args": ["mcp"] } } }
+```
+
+- **Claude Code** reads project-root `.mcp.json` itself — nothing else to
+  do, just (re)open the project and approve the server when prompted.
+- **Cursor** and **Codex CLI** don't read `.mcp.json`; copy the same
+  `command`/`args` pair by hand — Cursor into `.cursor/mcp.json` (project) or
+  `~/.cursor/mcp.json` (global), Codex CLI into `~/.codex/config.toml`:
+  ```toml
+  [mcp_servers.figma-map]
+  command = "/path/to/figma-map"
+  args = ["mcp"]
+  ```
+
+### 4. (Optional) Load the browser extension
 
 1. `cd extensions/browser && npm install && npm run build`
 2. Open `chrome://extensions`, enable **Developer mode**.
@@ -178,40 +212,15 @@ Figma-linked issue, instead of a screenshot and a paragraph of description.
 ### Requirements
 
 The only hard requirement is the Figma plugin (step 2 above) — everything
-else below is optional, and just means a specific feature won't work
-without it.
+else is optional, and just means a specific feature won't work without it.
 
 | Dependency | Required? | Without it |
 |---|---|---|
 | **Figma desktop, bridge + plugin running** (step 2 above) | **Yes** | Nothing works — this is how figma-map reads your file at all. |
 | **Google Chrome / Chromium** | Optional | No headless rendering — `screenshot`, `verify reconcile`, and the browser-extension compare loop need it. |
-| **Storybook 7+** running | Optional | No code-component catalog — `setup scan`/`build map` (going from a Figma node to *your* JSX) need it. Reading tokens/structure straight from Figma doesn't. |
+| **Storybook 7+** running | Optional | No code-component catalog — `setup scan`/`build map` need it. Reading tokens/structure straight from Figma doesn't. |
 | **OpenAI-compatible vision endpoint + key** | Optional | No component matching or prop inference — `setup bind` and the leftover-prop vision step need it (works with OpenAI, a local Ollama/llava server, or any compatible gateway). |
-| **Browser extension** (step 3 above) | Optional | No human-flagged live-page issues — everything else still works without it. |
-
-## Quick start
-
-```bash
-figma-map init /path/to/your/project          # skill, figma-map.yaml, MCP registration, CLAUDE.md
-cd /path/to/your/project
-export OPENAI_API_KEY=sk-...
-
-figma-map doctor                              # verify bridge, chrome, storybook, key
-
-# 1. Build the code-component catalog (no AI).
-figma-map setup scan --project /path/to/storybook-project
-
-# 2. Match Figma to the catalog and write the binding (AI, run once).
-figma-map setup bind
-#    → review figma-map.binding.yaml
-
-# 3. Generate code for any Figma node.
-figma-map build map 13:1077
-```
-
-`init` never clobbers what's already there — it prints exactly what it's
-about to create/change and asks for confirmation first (`-y` to skip that for
-scripts). Full command list and every flag: [docs/commands.md](docs/commands.md).
+| **Browser extension** (step 4 above) | Optional | No human-flagged live-page issues — everything else still works without it. |
 
 ## Troubleshooting
 
@@ -228,7 +237,7 @@ Other common issues:
 - **`figma-map doctor` fails on "bridge"** — the backend (`:1994`) isn't
   running, or no plugin instance has ever connected to it. Run
   `figma-map bridge up --repo <path>`, then load/run the plugin in Figma once
-  (see [Install → step 2](#2-load-the-bridge-plugin-in-figma)).
+  (see [Manual install → step 2](#2-start-the-bridge-and-load-the-figma-plugin)).
 - **`doctor` fails on "chrome"** — no local Chrome/Chromium found; install
   one, or point `figma-map.yaml` at a binary via the chrome path setting.
 - **`doctor` fails on "storybook"** — nothing is serving `index.json` on the
@@ -247,25 +256,16 @@ Other common issues:
 
 Where this is headed next, in rough priority order:
 
-- [ ] **Deeper agent ↔ issue integration** — a tighter, more explicit hand-off
-  than "the agent polls the inbox": the agent should be able to claim an
-  issue, report progress back on it, and close the loop without the human
-  re-explaining context already captured when it was flagged.
-- [ ] **Arbitrary-region diff selection** — today a flagged issue is tied to
-  one element; letting a human drag-select any region of the page (not just
-  a single node) and hand *that* to the agent as the unit of comparison.
+- [ ] **Deeper agent ↔ issue integration** — claim an issue, report progress
+  on it, close the loop without re-explaining context already captured.
+- [ ] **Arbitrary-region diff selection** — drag-select any region of the
+  page, not just a single node, as the unit of comparison.
 - [ ] **Diff-to-fix, not just diff-to-look-at** — show the agent the actual
-  visual diff for a flagged issue (not only the Figma-side tokens), so it can
-  reason about what changed on screen, not just what the spec says.
-- [ ] **Large-document performance** — the backend no longer times out a
-  large request outright (the plugin heartbeats, the backend's inactivity
-  window resets on each one), but a full-styles walk over a document with a
-  very large node count is still genuinely slow. The workaround today is
-  scoping calls with `--depth` (see [Troubleshooting](#troubleshooting));
-  actually speeding up the walk itself is still open.
-- [ ] **One-click plugin/extension install** — publish the Figma plugin to
-  the Community and the browser extension to the Chrome Web Store, so step
-  2/3 above stop being a manual "load unpacked."
+  visual diff for a flagged issue, not only the Figma-side tokens.
+- [ ] **Large-document performance** — a full-styles walk over a very large
+  node count is still genuinely slow; `--depth` is today's workaround.
+- [ ] **One-click plugin/extension install** — publish to the Figma
+  Community and the Chrome Web Store, so "load unpacked" stops being a step.
 - [ ] **Wider `reconcile` coverage** — margins, box-shadow, and gradient
   fills aren't diffed yet.
 - [ ] **Idiomatic boolean props** in codegen (`disabled` instead of
@@ -302,4 +302,4 @@ make lint     # golangci-lint
 
 ## License
 
-[MIT](LICENSE) © Kirill Baranov
+[MIT](LICENSE) © [Kirill Baranov](https://k-baranov.ru/)
