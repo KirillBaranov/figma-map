@@ -17,8 +17,8 @@ specific to it (source file, shared assets, reproduce commands).
 
 ## Method
 
-Same agent, same model, same task, same shared image assets — only the tool
-differs:
+Same agent (Claude Code, Sonnet 5), same task, same shared image assets —
+only the tool differs:
 
 - **baseline** — the agent builds from the design screenshot by eye, stopping at
   "looks right" (no figma-map).
@@ -61,9 +61,10 @@ For human judgment (`out/sidebyside.png`, `out/<arm>_diff.png`).
 
 ## Reproduce
 
-Environment used: figma-map **v0.2.0**, headless Chrome, model **gpt-4o-mini**,
-figma-bridge on `:1994` with the file open, the catalog/binding from `scan`+
-`bind`.
+Environment used: figma-map **v0.2.0**, headless Chrome, coding agent
+**Claude Code (Sonnet 5)** for both arms, figma-map's own vision LLM
+**gpt-4o-mini** for `setup bind` only, figma-bridge on `:1994` with the file
+open, the catalog/binding from `scan`+`bind`.
 
 Fixed parameters: **frame `868:167`** ("Drive your design to a new age" landing
 hero), **scale 1** → design **1440×1024**, render **width 1440**.

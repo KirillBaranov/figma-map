@@ -21,7 +21,7 @@ verify loop that tells an agent precisely what's still wrong, until it isn't.
 
 ![design vs an agent building by eye vs an agent using figma-map](bench/sidebyside.png)
 
-<p align="center"><em>Left to right: the design, an agent building by eye, an agent using figma-map's tokens + verify loop. Same model, same prompt, same assets — the only variable is the tool.</em></p>
+<p align="center"><em>Left to right: the design, an agent building by eye, an agent using figma-map's tokens + verify loop. Same agent (Claude Code, Sonnet 5), same prompt, same assets — the only variable is the tool.</em></p>
 
 <div align="center">
 
@@ -33,7 +33,7 @@ verify loop that tells an agent precisely what's still wrong, until it isn't.
 
 </div>
 
-<p align="center">Same agent, same model, same prompt, same shared assets — only the tool differs. The score is an independent pixel diff against the reference image, not figma-map's own — it can't be biased toward the treatment arm. <a href="bench/README.md">Method & caveats →</a></p>
+<p align="center">Same agent (Claude Code, Sonnet 5), same prompt, same shared assets — only the tool differs. The score is an independent pixel diff against the reference image, not figma-map's own — it can't be biased toward the treatment arm. <a href="bench/README.md">Method & caveats →</a></p>
 
 ## Install
 
