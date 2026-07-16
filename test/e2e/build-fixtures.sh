@@ -58,7 +58,14 @@ COMMIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo none)"
 DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 (
 	cd "$ROOT"
-	GOOS=linux GOARCH="$ARCH" go build \
+	# CGO_ENABLED=0 matches .goreleaser.yaml's real build exactly — without
+	# it, a native (non-cross-compiling) `go build` on a Linux CI runner
+	# with gcc present will link against the host's glibc, and the
+	# resulting binary won't run at all on a musl (Alpine) image. This
+	# doesn't show up when cross-compiling from macOS (Go auto-disables
+	# cgo when there's no cross C toolchain), which is exactly why this
+	# was missed locally and only surfaced on a real Linux CI runner.
+	CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build \
 		-ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
 		-o "${CLI_TMP}/figma-map" .
 )
