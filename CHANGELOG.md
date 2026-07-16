@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-17
+
 ### Added
 
 - **Docker-based e2e test for the install path** (`test/e2e/`, new
@@ -86,6 +88,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.claude/skills/figma-map-setup/SKILL.md`, and
   `.claude/skills/figma-map/SKILL.md` now point at that zip instead of the
   checkout's manifest.
+- **The e2e install test's CLI fixture failed to run on Alpine — turned out
+  to be a fixture-builder bug, not the flagged musl backend risk.**
+  `test/e2e/build-fixtures.sh` built the CLI without `CGO_ENABLED=0`
+  (unlike `.goreleaser.yaml`'s real build); a native Linux CI runner links
+  that against glibc, breaking on musl. Only surfaced on a real Linux CI
+  run — cross-compiling from macOS locally auto-disables cgo, masking it.
+- **CI's `oven-sh/setup-bun@v2` step resolved `bun-version: latest` via a
+  GitHub API call that 503'd repeatedly.** Pinned to a specific version in
+  both `ci.yml` and `release.yml` instead of depending on that lookup.
 
 ## [0.10.0] - 2026-07-16
 
