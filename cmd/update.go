@@ -1,27 +1,22 @@
 package cmd
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/kirillbaranov/figma-map/internal/config"
+	"github.com/kirillbaranov/figma-map/internal/release"
+	"github.com/kirillbaranov/figma-map/internal/service"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 )
 
-const updateRepo = "kirillbaranov/figma-map"
-
-func newUpdateCmd(info BuildInfo) *cobra.Command {
+func newUpdateCmd(info BuildInfo, get func() *service.Service) *cobra.Command {
 	var (
 		checkOnly   bool
 		force       bool
@@ -32,10 +27,11 @@ func newUpdateCmd(info BuildInfo) *cobra.Command {
 		Use:   "update",
 		Short: "Update figma-map to the latest release",
 		Long: "Downloads the latest figma-map release for this platform, verifies its checksum, " +
-			"and replaces the currently running binary in place.",
+			"replaces the currently running binary in place, and refreshes the backend bundle, " +
+			"the Figma plugin, and figma-map.yaml's schema to match.",
 		SilenceUsage: true,
 		RunE: func(c *cobra.Command, _ []string) error {
-			return runUpdate(c, info, checkOnly, force, wantVersion)
+			return runUpdate(c, info, get(), checkOnly, force, wantVersion)
 		},
 	}
 	cmd.Flags().BoolVar(&checkOnly, "check", false, "only check whether a newer version is available")
@@ -44,13 +40,13 @@ func newUpdateCmd(info BuildInfo) *cobra.Command {
 	return cmd
 }
 
-func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVersion string) error {
+func runUpdate(c *cobra.Command, info BuildInfo, svc *service.Service, checkOnly, force bool, wantVersion string) error {
 	out := c.OutOrStdout()
 
 	target := wantVersion
 	if target == "" {
 		var err error
-		target, err = latestReleaseTag()
+		target, err = release.LatestTag()
 		if err != nil {
 			return fmt.Errorf("resolve latest version: %w", err)
 		}
@@ -109,13 +105,13 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	archivePath, binaryName, err := downloadRelease(tmpDir, target)
+	archivePath, binaryName, err := downloadCLIRelease(tmpDir, target)
 	if err != nil {
 		return err
 	}
 
 	_, _ = fmt.Fprintln(out, "extracting...")
-	extractedBinary, err := extractBinary(archivePath, tmpDir, binaryName)
+	extractedBinary, err := release.ExtractBinary(archivePath, tmpDir, binaryName)
 	if err != nil {
 		return fmt.Errorf("extract archive: %w", err)
 	}
@@ -169,14 +165,83 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 	}
 
 	_, _ = fmt.Fprintf(out, "updated %s -> %s (%s)\n", current, target, installPath)
-	if runtime.GOOS == "windows" {
-		_, _ = fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
-			`(netstat -ano | findstr :1994, then taskkill /PID <pid> /F and let it respawn)`)
-	} else {
-		_, _ = fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
-			"(lsof -nP -iTCP:1994 -sTCP:LISTEN, then kill it and let it respawn)")
-	}
+
+	ctx := c.Context()
+	refreshBackend(ctx, out, svc, target)
+	refreshPlugin(ctx, out, target)
+	migrateConfig(out)
+
 	return nil
+}
+
+// refreshBackend re-fetches the backend bundle for target if it isn't
+// already cached, restarting a bridge that was already running so it picks
+// up the new code — best-effort: a failure here doesn't undo the CLI
+// update that already succeeded, it just leaves the old backend running
+// (same as before this existed) with a warning printed.
+func refreshBackend(ctx context.Context, out io.Writer, svc *service.Service, target string) {
+	wasRunning := false
+	if svc != nil {
+		if status, err := svc.BridgeStatus(ctx); err == nil {
+			wasRunning = status.Running
+		}
+	}
+
+	_, changed, err := service.EnsureBackendBundle(ctx, target)
+	if err != nil {
+		_, _ = fmt.Fprintf(out, "warning: could not refresh backend bundle: %v\n", err)
+		return
+	}
+	if !changed {
+		_, _ = fmt.Fprintln(out, "backend bundle already current")
+		return
+	}
+	if !wasRunning || svc == nil {
+		_, _ = fmt.Fprintln(out, "backend bundle updated (not currently running)")
+		return
+	}
+	if _, err := svc.BridgeDown(ctx); err != nil {
+		_, _ = fmt.Fprintf(out, "warning: backend bundle updated, but could not stop the running backend to restart it: %v\n", err)
+		return
+	}
+	if _, err := svc.BridgeUp(ctx, ""); err != nil {
+		_, _ = fmt.Fprintf(out, "warning: backend bundle updated, but restart failed: %v\n", err)
+		return
+	}
+	_, _ = fmt.Fprintln(out, "backend bundle updated and restarted")
+}
+
+// refreshPlugin re-fetches the Figma plugin bundle for target in place if
+// it isn't already current — best-effort, same as refreshBackend.
+func refreshPlugin(ctx context.Context, out io.Writer, target string) {
+	changed, err := service.EnsurePlugin(ctx, target, false)
+	if err != nil {
+		_, _ = fmt.Fprintf(out, "warning: could not refresh Figma plugin bundle: %v\n", err)
+		return
+	}
+	if !changed {
+		_, _ = fmt.Fprintln(out, "Figma plugin bundle already current")
+		return
+	}
+	_, _ = fmt.Fprintln(out, "Figma plugin bundle updated — in Figma, re-run it "+
+		"(Plugins → Development → Figma MAP Bridge); no need to re-import, its path hasn't changed")
+}
+
+// migrateConfig applies any pending figma-map.yaml schema migrations in the
+// current directory — best-effort, same as refreshBackend/refreshPlugin.
+func migrateConfig(out io.Writer) {
+	applied, err := config.Migrate("figma-map.yaml")
+	if err != nil {
+		_, _ = fmt.Fprintf(out, "warning: could not migrate figma-map.yaml: %v\n", err)
+		return
+	}
+	if len(applied) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(out, "migrated figma-map.yaml:")
+	for _, desc := range applied {
+		_, _ = fmt.Fprintf(out, "  - %s\n", desc)
+	}
 }
 
 func checkWritable(dir string) error {
@@ -188,42 +253,10 @@ func checkWritable(dir string) error {
 	return os.Remove(f.Name())
 }
 
-type githubRelease struct {
-	TagName string `json:"tag_name"`
-}
-
-func latestReleaseTag() (string, error) {
-	url := "https://api.github.com/repos/" + updateRepo + "/releases/latest"
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "figma-map-update")
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github api returned %s", resp.Status)
-	}
-
-	var rel githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return "", fmt.Errorf("parse github api response: %w", err)
-	}
-	if rel.TagName == "" {
-		return "", fmt.Errorf("github api response had no tag_name")
-	}
-	return rel.TagName, nil
-}
-
-// downloadRelease fetches the release archive for the current platform into
-// dir, verifies it against the release's checksums.txt, and returns its path
-// plus the binary name to look for inside it.
-func downloadRelease(dir, tag string) (archivePath, binaryName string, err error) {
+// downloadCLIRelease fetches the figma-map CLI release archive for the
+// current platform into dir, verifying it against checksums.txt, and
+// returns its path plus the binary name to look for inside it.
+func downloadCLIRelease(dir, tag string) (archivePath, binaryName string, err error) {
 	binaryName = "figma-map"
 	ext := "tar.gz"
 	if runtime.GOOS == "windows" {
@@ -231,159 +264,11 @@ func downloadRelease(dir, tag string) (archivePath, binaryName string, err error
 		ext = "zip"
 	}
 	version := strings.TrimPrefix(tag, "v")
-	archive := fmt.Sprintf("%s_%s_%s_%s.%s", "figma-map", version, runtime.GOOS, runtime.GOARCH, ext)
-	baseURL := "https://github.com/" + updateRepo + "/releases/download/" + tag
+	archive := fmt.Sprintf("figma-map_%s_%s_%s.%s", version, runtime.GOOS, runtime.GOARCH, ext)
 
-	archivePath = filepath.Join(dir, archive)
-	if err := downloadFile(baseURL+"/"+archive, archivePath); err != nil {
-		return "", "", fmt.Errorf("download %s (no release asset for %s/%s at %s?): %w",
-			archive, runtime.GOOS, runtime.GOARCH, tag, err)
-	}
-
-	checksumsPath := filepath.Join(dir, "checksums.txt")
-	if err := downloadFile(baseURL+"/checksums.txt", checksumsPath); err != nil {
-		return "", "", fmt.Errorf("download checksums.txt: %w", err)
-	}
-
-	expected, err := checksumFor(checksumsPath, archive)
+	archivePath, err = release.FetchAndVerify(dir, release.BaseURL(tag), archive)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("%w (no release asset for %s/%s at %s?)", err, runtime.GOOS, runtime.GOARCH, tag)
 	}
-	actual, err := sha256File(archivePath)
-	if err != nil {
-		return "", "", fmt.Errorf("hash downloaded archive: %w", err)
-	}
-	if expected != actual {
-		return "", "", fmt.Errorf("checksum mismatch for %s: expected %s, got %s", archive, expected, actual)
-	}
-
 	return archivePath, binaryName, nil
-}
-
-func downloadFile(url, dest string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("http %s", resp.Status)
-	}
-
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	_, err = io.Copy(f, resp.Body)
-	return err
-}
-
-func checksumFor(checksumsPath, archive string) (string, error) {
-	data, err := os.ReadFile(checksumsPath)
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[1] == archive {
-			return fields[0], nil
-		}
-	}
-	return "", fmt.Errorf("no checksum entry for %s", archive)
-}
-
-func sha256File(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func extractBinary(archivePath, destDir, binaryName string) (string, error) {
-	if strings.HasSuffix(archivePath, ".zip") {
-		return extractBinaryFromZip(archivePath, destDir, binaryName)
-	}
-	return extractBinaryFromTarGz(archivePath, destDir, binaryName)
-}
-
-func extractBinaryFromTarGz(archivePath, destDir, binaryName string) (string, error) {
-	f, err := os.Open(archivePath)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = gz.Close() }()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return "", fmt.Errorf("binary %s not found in archive", binaryName)
-		}
-		if err != nil {
-			return "", err
-		}
-		if filepath.Base(hdr.Name) != binaryName || hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-
-		outPath := filepath.Join(destDir, binaryName)
-		out, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-		if err != nil {
-			return "", err
-		}
-		if _, err := io.Copy(out, tr); err != nil {
-			_ = out.Close()
-			return "", err
-		}
-		_ = out.Close()
-		return outPath, nil
-	}
-}
-
-func extractBinaryFromZip(archivePath, destDir, binaryName string) (string, error) {
-	zr, err := zip.OpenReader(archivePath)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = zr.Close() }()
-
-	for _, zf := range zr.File {
-		if filepath.Base(zf.Name) != binaryName || zf.FileInfo().IsDir() {
-			continue
-		}
-
-		rc, err := zf.Open()
-		if err != nil {
-			return "", err
-		}
-
-		outPath := filepath.Join(destDir, binaryName)
-		out, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-		if err != nil {
-			_ = rc.Close()
-			return "", err
-		}
-		_, copyErr := io.Copy(out, rc)
-		_ = rc.Close()
-		_ = out.Close()
-		if copyErr != nil {
-			return "", copyErr
-		}
-		return outPath, nil
-	}
-	return "", fmt.Errorf("binary %s not found in archive", binaryName)
 }

@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt vet install snapshot clean
+.PHONY: build test lint fmt vet install snapshot clean e2e-install
 
 # Local build with version stamped from git.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -29,3 +29,8 @@ snapshot: ## Build release artifacts locally (no publish)
 
 clean: ## Remove build artifacts
 	rm -rf figma-map dist/ catalog/
+
+e2e-install: ## Build fixtures and run the Docker install e2e locally (requires docker, bun, node)
+	sh test/e2e/build-fixtures.sh 0.99.0
+	sh test/e2e/build-fixtures.sh 0.99.1
+	sh test/e2e/run-e2e-local.sh

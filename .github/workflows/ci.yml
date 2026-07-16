@@ -115,6 +115,36 @@ jobs:
           version: "~> v2"
           args: check
 
+  e2e-install:
+    name: e2e install test (install.sh across Linux images)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: extensions/.nvmrc
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      # Builds a "fake release" (CLI, backend, plugin) at two versions and
+      # runs install.sh -> bridge up -> doctor -> update -> uninstall
+      # against it inside ubuntu/debian/alpine containers — see
+      # test/e2e/README.md (or `make e2e-install` to run this locally).
+      # Deliberately not gated on changed-files: the bug that motivated
+      # this test (a path/tag-format mismatch between install.sh and the
+      # Go fetch code) originated outside the "obvious" install-path
+      # files, which a changed-files filter would have missed.
+      - name: build fixtures
+        run: |
+          sh test/e2e/build-fixtures.sh 0.99.0
+          sh test/e2e/build-fixtures.sh 0.99.1
+      - name: run e2e install test
+        run: sh test/e2e/run-e2e-local.sh
+
   extensions:
     name: extensions + backend (plugin + backend build)
     runs-on: ubuntu-latest

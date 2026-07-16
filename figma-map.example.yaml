@@ -5,11 +5,10 @@
 # figma-bridge HTTP RPC server (backend/).
 bridge: http://localhost:1994
 
-# Path to a figma-map source checkout (containing backend/ and
-# extensions/plugin/) — only needed to use `bridge up`/`bridge down`/
-# `bridge status`, which start/stop/check that backend process for you.
-# Leave empty if you start it yourself; every other command just talks to
-# whatever's already listening on `bridge` above.
+# Path to a figma-map source checkout containing backend/ — only for
+# contributors building the backend from source. `bridge up` fetches a
+# prebuilt bundle matching the running CLI's version by default; leave this
+# empty unless you specifically want to build from source instead.
 bridgeRepo: ""
 
 # Running Storybook instance.

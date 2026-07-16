@@ -53,3 +53,7 @@ changelog:
 release:
   draft: false
   prerelease: auto
+  extra_files:
+    - glob: ./figma-map-plugin.zip
+    - glob: ./figma-map-plugin.zip.sha256
+    - glob: ./figma-map-backend_*

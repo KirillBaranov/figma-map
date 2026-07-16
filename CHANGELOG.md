@@ -4,6 +4,89 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Docker-based e2e test for the install path** (`test/e2e/`, new
+  `e2e-install` CI job, `make e2e-install` locally). Builds a "fake
+  release" (CLI + backend + plugin) at two versions and runs
+  `install.sh` through the full `bridge up` → `doctor` → `update` →
+  `uninstall` cycle inside `ubuntu:24.04`, `debian:12`, and `alpine:3.20`
+  containers — catching distro-specific shell/libc breakage (`dash` vs
+  `ash`, curl vs wget, glibc vs musl) automatically instead of by hand.
+  Confirmed Alpine's musl libc can't run the glibc-targeted `bun compile`
+  backend binary (`fork/exec: no such file or directory`); the test
+  soft-fails that specific check there with a clear diagnostic rather than
+  treating it as a hard failure, while still fully asserting install,
+  on-disk paths, `update`, and `uninstall` — a real, previously-undetected
+  gap the test surfaced on its first run. New `$FIGMA_MAP_BASE_URL`
+  override (`install.sh`, `install.ps1`, `internal/release.BaseURL`) points
+  every fetch at local fixtures instead of GitHub for this test; a no-op
+  in every real install.
+
+- **The backend and Figma plugin are now fetched, not built, by default —
+  no git checkout, no Node install required at all.** Previously `bridge
+  up` required a full source checkout plus an undocumented `npm install`
+  step; now it fetches a standalone, `bun`-compiled backend binary matching
+  the running CLI's version (cached under
+  `~/.figma-map/versions/<tag>/backend/`) and execs it directly.
+  `--repo`/`bridgeRepo` still works exactly as before for contributors
+  building from source. New `internal/release` package centralizes
+  download/checksum/extract logic shared by the CLI, backend, and plugin
+  fetchers.
+- **The Figma plugin is unpacked once to a fixed path
+  (`~/.figma-map/plugin/`) and refreshed in place on update**, instead of
+  needing a fresh download + re-import every time — after `figma-map
+  update`, re-running the plugin in Figma picks up the new code without a
+  full re-import (`internal/service/plugin.go`'s `EnsurePlugin`).
+- **`figma-map update` now owns the whole stack, not just its own
+  binary.** After replacing the CLI, it best-effort refreshes the cached
+  backend bundle (restarting a bridge that was already running), refreshes
+  the Figma plugin bundle in place, and migrates `figma-map.yaml`'s schema
+  if needed — printing exactly what changed. New
+  `internal/config/migrate.go` adds a `schemaVersion` field and an ordered
+  migration mechanism (empty today; infrastructure for the next schema
+  change).
+- **New `figma-map uninstall` command** — removes the CLI binary, all
+  cached backend bundles, the unpacked plugin, and the rest of
+  `~/.figma-map`, instead of leaving that to be done by hand.
+- **`install.sh`/`install.ps1` now fetch all three components (CLI,
+  backend, plugin) in one run**, verify each against its own checksum, and
+  print a full summary of what was installed and where, how to update
+  (`figma-map update`) and uninstall (`figma-map uninstall`), and a
+  ready-to-paste prompt for the human's coding agent.
+
+### Changed
+
+- **The setup skill and README now put the human, not the agent, in charge
+  of running the installer.** Autonomously piping a remote script into a
+  shell is a pattern many safety-tuned coding agents categorically refuse —
+  rather than working around that refusal, `.claude/skills/figma-map-setup/SKILL.md`
+  now has the human run `install.sh`/`install.ps1` themselves, and the
+  agent's first action is just confirming `figma-map --version` works
+  (with explicit guidance for the common "PATH not refreshed in this
+  terminal" case). See `docs/onboarding-flow.md` for the full flow,
+  including the failure-mode diagrams this was designed against.
+- **`figma-map doctor`'s five checks are now explicitly documented as
+  blocking vs. optional** (bridge reachable + plugin connected are
+  blocking; Chrome, Storybook, and API key are optional) in both SKILL.md
+  files, so a partial `doctor` failure doesn't read as "setup isn't done."
+
+### Fixed
+
+- **Every install path pointed at a Figma plugin that couldn't load.**
+  `extensions/plugin/dist/` is a build artifact and was never committed
+  (it's gitignored), so `manifest.json` in a bare checkout has always
+  referenced files that don't exist — even a fresh `git clone` plus the CLI
+  release didn't get you a working plugin, and no doc mentioned the missing
+  `npm run build` step. Fixed by building the plugin in CI and attaching it
+  to every release as `figma-map-plugin.zip` (`manifest.json` + prebuilt
+  `dist/`, no Node required to use it) — `README.md`,
+  `.claude/skills/figma-map-setup/SKILL.md`, and
+  `.claude/skills/figma-map/SKILL.md` now point at that zip instead of the
+  checkout's manifest.
+
 ## [0.10.0] - 2026-07-16
 
 ### Added

@@ -14,12 +14,18 @@ import (
 // figma-map.yaml; the API key is intentionally absent and sourced from the
 // environment via APIKey().
 type Config struct {
+	// SchemaVersion tracks which figma-map.yaml shape this file was written
+	// against. Absent/0 means "written before schema versioning existed" —
+	// `figma-map update` uses this to decide whether any migration in
+	// internal/config/migrate.go needs to run. Not meant to be hand-edited.
+	SchemaVersion int `yaml:"schemaVersion,omitempty"`
+
 	// Bridge is the base URL of the running figma-bridge HTTP RPC server.
 	Bridge string `yaml:"bridge"`
 	// BridgeRepo is the path to a figma-map source checkout containing
-	// backend/ and extensions/plugin/ — where `bridge up` runs `npm
-	// --prefix backend run build && node backend/dist/index.js` from.
-	// Optional: only needed to use `bridge up/down/status`; every other
+	// backend/, for contributors building the backend from source instead
+	// of `bridge up`'s default: fetching a prebuilt bundle matching the
+	// running CLI's version. Optional and rarely needed — every other
 	// operation just talks to whatever's already listening on Bridge.
 	BridgeRepo string `yaml:"bridgeRepo"`
 	// Storybook is the base URL of a running Storybook instance.

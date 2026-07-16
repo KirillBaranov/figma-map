@@ -44,7 +44,7 @@ func newRootCmd(info BuildInfo, assets embed.FS) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			svc = service.New(cfg)
+			svc = service.New(cfg, info.Version)
 			return nil
 		},
 	}
@@ -56,7 +56,8 @@ func newRootCmd(info BuildInfo, assets embed.FS) *cobra.Command {
 	}
 	root.AddCommand(newMCPCmd(get))
 	root.AddCommand(newInitCmd(get, assets))
-	root.AddCommand(newUpdateCmd(info))
+	root.AddCommand(newUpdateCmd(info, get))
+	root.AddCommand(newUninstallCmd(get))
 
 	return root
 }

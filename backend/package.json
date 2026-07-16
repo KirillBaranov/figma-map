@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "compile": "bun build --compile --outfile dist-bin/figma-bridge src/index.ts"
   },
   "keywords": [
     "figma",

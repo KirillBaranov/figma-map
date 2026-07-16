@@ -20,15 +20,18 @@ import (
 // Service is the entry point for every operation. src and llm are interfaces so
 // tests can inject fakes; production wires the bridge and the OpenAI client.
 type Service struct {
-	cfg config.Config
-	src figma.Source
-	llm llm.VisionModel // built lazily by llmClient
+	cfg     config.Config
+	src     figma.Source
+	llm     llm.VisionModel // built lazily by llmClient
+	version string          // the running CLI's own version; "dev" for local builds
 }
 
 // New constructs a Service. It never requires an API key — deterministic
-// operations run without one.
-func New(cfg config.Config) *Service {
-	return &Service{cfg: cfg, src: newSource(cfg)}
+// operations run without one. version is the running CLI's build version
+// (BuildInfo.Version), used by BridgeUp/EnsurePlugin to fetch the backend
+// and plugin bundles matching this exact release.
+func New(cfg config.Config, version string) *Service {
+	return &Service{cfg: cfg, src: newSource(cfg), version: version}
 }
 
 // newSource picks the figma.Source backend per cfg.Figma.Source (ADR-0003

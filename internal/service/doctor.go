@@ -60,7 +60,7 @@ func (s *Service) Doctor(ctx context.Context) Report {
 // agent reading just the Ping check.
 func pluginConnected(ctx context.Context, s *Service, bridgeErr error) error {
 	if bridgeErr != nil {
-		return fmt.Errorf("bridge unreachable — restart it: cd backend && node dist/index.js")
+		return fmt.Errorf("bridge unreachable — restart it: figma-map bridge up")
 	}
 	files, err := s.src.Files(ctx)
 	if err != nil {

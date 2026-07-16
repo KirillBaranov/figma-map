@@ -36,43 +36,49 @@ Groups: **figma** (read ground truth — find/inspect/selection/pages/tokens/var
 
 If the CLI seems out of date (a doctor/build/verify op fails in a way that
 matches a fixed bug, or the user mentions a new release), run **`figma-map
-update`** (ungrouped) — downloads the latest release for the current
-platform, verifies its checksum, and replaces the running binary in place.
-`update --check` reports whether a newer version exists without installing
-it. This only updates the `figma-map` binary itself; if the bridge backend
-(`backend/`) or Figma plugin (`extensions/plugin/`) changed too, those still
-need a manual rebuild in the figma-map repo (`bridge up` will rebuild the
-backend; the plugin needs re-importing in Figma).
+update`** (ungrouped) — it owns the whole stack, not just its own binary:
+downloads the latest CLI release for the current platform and verifies its
+checksum; refreshes the cached backend bundle if it's stale, restarting a
+bridge that was already running so it picks up the new code; refreshes the
+Figma plugin bundle in place at its one fixed path (after this, re-running
+the plugin in Figma — **Plugins → Development → Figma MAP Bridge** — picks
+up the change, no re-import needed); and migrates `figma-map.yaml`'s schema
+if a version bump needs it, printing exactly what changed. `update --check`
+reports whether a newer version exists without installing it. Each of these
+steps is best-effort — a warning on one doesn't undo the others.
 
-Run `doctor` (ungrouped, no group prefix). It checks the Figma bridge, headless
-Chrome, Storybook, and the API key — and separately reports whether a Figma
-file is actually connected to the bridge (the bridge process can be up with no
-plugin connected; that shows as its own failing check, not a generic
-"unreachable"). The design must be open in Figma with the bridge plugin
-running. A `figma-map.binding.yaml` + `catalog/` must exist (created once by
-`setup scan` then `setup bind`); if missing, ask the user to run them.
+Run `doctor` (ungrouped, no group prefix). Read its five checks by name, not
+as one pass/fail verdict: **blocking** — bridge reachable, and a Figma file
+actually connected to it (the bridge process can be up with no plugin
+connected; that's its own failing check, not a generic "unreachable" — the
+most common cause is Figma being minimized or unfocused, since Figma
+freezes plugin execution when its window isn't active); **optional, fine to
+ignore for now** — headless Chrome, Storybook, API key. A
+`figma-map.binding.yaml` + `catalog/` must exist for anything beyond
+reading raw tokens/structure (created once by `setup scan` then `setup
+bind`); if missing, ask the user to run them.
 
-The bridge is a separate Node process + a Figma plugin — not part of *this*
-project's own code even when `figma-map` is being used from inside it. It
-lives in the `figma-map` source repo (wherever the user cloned/pulled it —
-check with them if you don't already know the path), listens on **`:1994`**
+The bridge is a separate backend process + a Figma plugin, not part of
+*this* project's own code even when `figma-map` is being used from inside
+it — but neither needs a source checkout anymore. It listens on **`:1994`**
 by default (the `bridge:` URL in `figma-map.yaml` must match), and needs two
 things running before any `figma`/`build`/`verify` call will work:
 
 1. **The backend process.** Try **`bridge up`** first (ungrouped, no group
    prefix) — it pings the configured bridge URL, does nothing if something's
-   already there, otherwise builds and starts the backend for you and reports
-   back once it's actually answering. It needs to know where the figma-map
-   repo is: pass `--repo <path>`, or use it without a flag if `bridgeRepo` is
-   already set in `figma-map.yaml`. If neither is set, it errors with exactly
-   what to do — ask the user for the repo path once, or fall back to running
-   it by hand: `npm --prefix backend run build && node backend/dist/index.js`
-   from that repo. `bridge status`/`bridge down` check/stop it the same way.
+   already there, otherwise fetches (or reuses a cached) standalone backend
+   bundle matching the running CLI's version and starts it, reporting back
+   once it's actually answering. No `--repo`, no Node install, no checkout
+   needed for this default path. `--repo <path to a figma-map source
+   checkout>` (or `bridgeRepo` in `figma-map.yaml`) is only for contributors
+   building the backend from source instead. `bridge status`/`bridge down`
+   check/stop it the same way.
 2. **The Figma plugin**, in Figma itself: **Plugins → Development → Import
-   plugin from manifest**, pointing at `extensions/plugin/manifest.json` in
-   that same repo, run against the open design. `bridge up` can't do this
-   part — it's a one-time manual step per Figma session, same as opening the
-   file itself.
+   plugin from manifest**, pointing at `manifest.json` under
+   `.figma-map/plugin/` in the human's home directory — that's where the
+   installer (or a prior `figma-map update`) already unpacked it, no
+   download or build step needed. `bridge up` can't do this part — it's a
+   one-time manual step per Figma session, same as opening the file itself.
 
 If `doctor` fails on the bridge/plugin checks below, these are the two
 things to check first — don't assume a code bug.
@@ -104,10 +110,10 @@ react accordingly instead of guessing or giving up.
   `figma bridge unreachable` and `figma plugin connected` are reported as
   two separate checks on purpose, because they look identical to a human but
   need different fixes:
-  - `figma bridge unreachable — restart it: cd backend && node dist/index.js`
-    — the backend process itself isn't running. Run **`bridge up`** (with
-    `--repo` if `bridgeRepo` isn't set) before retrying anything — see
-    "Before you start" above.
+  - `bridge unreachable — restart it: figma-map bridge up` — the backend
+    process itself isn't running. Run **`bridge up`** (no `--repo` needed —
+    it fetches a cached bundle automatically) before retrying anything —
+    see "Before you start" above.
   - `bridge is up but no Figma file is connected — open the file and run the
     plugin in Figma (Plugins → Development)` — the backend is fine; the
     Figma plugin just isn't running in a tab yet, or the tab was closed.
@@ -132,9 +138,8 @@ react accordingly instead of guessing or giving up.
   lsof -nP -iTCP:1994 -sTCP:LISTEN   # find the PID holding it
   kill <pid>
   ```
-  then `bridge up` (or `node backend/dist/index.js &` from the figma-map
-  repo) to start a fresh one. Either way, don't assume the port itself is
-  broken.
+  then `bridge up` to start a fresh one. Either way, don't assume the port
+  itself is broken.
 - Don't loop blindly retrying a failing call more than once. The bridge
   already retries transient network blips internally and invisibly — if an
   error still reaches you, retrying the identical call without addressing

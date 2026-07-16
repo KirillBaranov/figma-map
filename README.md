@@ -37,20 +37,39 @@ verify loop that tells an agent precisely what's still wrong, until it isn't.
 
 ## Install
 
-The fastest way: your agent installs itself.
+Run this yourself, in your own terminal — **not** something to hand an
+agent to execute for you. Piping a remote script into a shell is exactly
+the kind of thing safety-conscious coding agents are right to refuse to do
+autonomously, so figma-map's setup is designed around the human always
+running this one command themselves:
 
+**macOS/Linux:**
 ```bash
-git clone https://github.com/KirillBaranov/figma-map
+curl -fsSL https://raw.githubusercontent.com/KirillBaranov/figma-map/main/install.sh | sh
 ```
+
+**Windows (PowerShell, not cmd.exe):**
+```powershell
+irm https://raw.githubusercontent.com/KirillBaranov/figma-map/main/install.ps1 | iex
+```
+
+One command, three things installed: the CLI, a standalone backend bundle
+(no Node install needed to run it), and the Figma plugin (no build step
+needed to load it) — no `git clone` required for any of it.
 
 Then tell your agent (Claude Code, Cursor, Codex CLI, …):
 
-> Read `figma-map/.claude/skills/figma-map-setup/SKILL.md` and follow it to
-> set up figma-map in this project.
+> Read
+> https://raw.githubusercontent.com/KirillBaranov/figma-map/main/.claude/skills/figma-map-setup/SKILL.md
+> and follow it to set up figma-map in this project.
 
-It installs the CLI, starts the bridge, runs `init`, and registers itself as
-an MCP server for you — pausing only once, to ask you to load the Figma
-plugin (the one step no agent can do on your behalf).
+No `git clone` needed just for this — the agent only needs to read that one
+file, not run anything from a checkout.
+
+From here the agent confirms the CLI is on `$PATH`, starts the bridge, runs
+`init`, and registers itself as an MCP server for you — pausing only once,
+to ask you to load the Figma plugin (the one step no agent can do on your
+behalf, since it's a click inside Figma's own UI).
 
 <p align="center"><img src="docs/screenshots/figma-plugin-screen.png" width="80%" alt="Figma MAP Bridge plugin panel, connected, with the ready-to-paste agent prompt" /></p>
 
@@ -152,19 +171,31 @@ curl -fsSL https://raw.githubusercontent.com/KirillBaranov/figma-map/main/instal
 irm https://raw.githubusercontent.com/KirillBaranov/figma-map/main/install.ps1 | iex
 ```
 
-Both detect your OS/arch, download the matching release, verify its SHA-256
-checksum, and install the binary. Override with `FIGMA_MAP_VERSION=v0.1.0` (or
-`-Version v0.1.0` on Windows) to pin a tag, or `FIGMA_MAP_INSTALL_DIR=~/bin`
-(`-InstallDir` on Windows) to choose the directory. Windows currently ships
-`amd64` only — no `arm64` release yet.
+Both fetch three things in one run: the CLI, a standalone backend bundle
+(no Node install needed to run it), and the Figma plugin (no build step
+needed to load it) — detecting your OS/arch, verifying each SHA-256
+checksum before installing anything. Override with
+`FIGMA_MAP_VERSION=v0.1.0` (or `-Version v0.1.0` on Windows) to pin a tag,
+or `FIGMA_MAP_INSTALL_DIR=~/bin` (`-InstallDir` on Windows) to choose the
+CLI's directory. Windows currently ships `amd64` only — no `arm64` release
+yet.
 
 Alternatives: `go install github.com/kirillbaranov/figma-map@latest`, or grab
-a prebuilt archive from the [releases page](https://github.com/KirillBaranov/figma-map/releases).
+a prebuilt archive from the [releases page](https://github.com/KirillBaranov/figma-map/releases)
+— either only gets you the CLI binary, not the backend/plugin bundles, so
+`bridge up` will fetch those itself on first use instead.
 
-**Updating:** `figma-map update` fetches the latest release for your
-platform, verifies its checksum, and replaces the running binary in place.
-`figma-map update --check` just reports whether a newer version exists;
-`--version v0.6.0` pins a specific tag.
+**Updating:** `figma-map update` owns the whole stack, not just its own
+binary — it replaces the CLI, refreshes the backend bundle if it's stale
+(restarting a bridge that was already running), refreshes the Figma plugin
+in place (after this, just re-run it in Figma — no re-import needed), and
+migrates `figma-map.yaml`'s schema if a version bump needs it. `--check`
+reports whether a newer version exists without installing it; `--version
+v0.6.0` pins a specific tag.
+
+**Uninstalling:** `figma-map uninstall` removes the CLI binary, the cached
+backend bundles, the unpacked plugin, and the rest of `~/.figma-map` —
+nothing to hunt down by hand.
 
 ### 2. Start the bridge and load the Figma plugin
 
@@ -172,17 +203,32 @@ The bridge is what lets figma-map read your open Figma file directly, with no
 API token and no rate limits.
 
 ```bash
-figma-map bridge up --repo <path to this checkout>   # builds + starts the local backend on :1994
+figma-map bridge up   # fetches (or reuses a cached) backend bundle and starts it on :1994
 ```
 
-Then, **once**, load the plugin into Figma:
+No `--repo` needed — that flag (or `bridgeRepo` in `figma-map.yaml`) is only
+for contributors building the backend from source instead of using a
+release bundle.
+
+Then, **once**, load the plugin into Figma. The installer already unpacked
+it to `~/.figma-map/plugin/` — no separate download or build step:
 
 1. Open your Figma file (desktop app).
 2. **Plugins → Development → Import plugin from manifest…**
-3. Select `extensions/plugin/manifest.json` from this checkout.
+3. Select `manifest.json` from `~/.figma-map/plugin/`.
 4. Run it once (**Plugins → Development → Figma MAP Bridge**) — it connects
    over WebSocket to the backend you just started and stays connected while
    the file is open.
+
+After a future `figma-map update`, this becomes just "run it again" in
+Figma — no re-import, since the plugin's files refresh in place at the same
+path.
+
+Building either from source instead (e.g. for local development) still
+works: `cd backend && npm install && npm run build`, then `bridge up --repo
+<this checkout>`; for the plugin, `cd extensions/plugin && npm install &&
+npm run build`, then point step 3 at `extensions/plugin/manifest.json` in
+this checkout.
 
 ### 3. Wire it into your project
 
@@ -244,7 +290,7 @@ Other common issues:
 
 - **`figma-map doctor` fails on "bridge"** — the backend (`:1994`) isn't
   running, or no plugin instance has ever connected to it. Run
-  `figma-map bridge up --repo <path>`, then load/run the plugin in Figma once
+  `figma-map bridge up`, then load/run the plugin in Figma once
   (see [Manual install → step 2](#2-start-the-bridge-and-load-the-figma-plugin)).
 - **`doctor` fails on "chrome"** — no local Chrome/Chromium found; install
   one, or point `figma-map.yaml` at a binary via the chrome path setting.
@@ -257,8 +303,8 @@ Other common issues:
   `--depth` instead of walking the whole file (see
   [docs/architecture.md](docs/architecture.md#request-flow)).
 - **Still stuck after Figma is in the foreground and reconnected** — restart
-  the backend (`figma-map bridge down && figma-map bridge up --repo <path>`)
-  and re-run the plugin once from **Plugins → Development**.
+  the backend (`figma-map bridge down && figma-map bridge up`) and re-run
+  the plugin once from **Plugins → Development**.
 
 ## Roadmap
 

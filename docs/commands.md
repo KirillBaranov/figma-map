@@ -11,7 +11,7 @@ a flat `group_verb` MCP tool name (e.g. `figma_find`) for agents.
 | Group | Command | Description | Uses AI |
 |---|---|---|:---:|
 | — | `figma-map doctor` | Check bridge, Chrome, Storybook, and API key | — |
-| **bridge** (local backend process) | `bridge up [--repo]` | Start the backend if nothing's listening yet (builds it first if needed) | — |
+| **bridge** (local backend process) | `bridge up [--repo]` | Start the backend if nothing's listening yet — fetches a cached bundle by default, or builds from `--repo`/`bridgeRepo` if set | — |
 | | `bridge status` | Check whether the backend is reachable, and its pid/log | — |
 | | `bridge down` | Stop the backend `bridge up` started | — |
 | **figma** (read Figma ground truth) | `figma find <query>` | Search nodes by name/text/type | — |
@@ -35,6 +35,8 @@ a flat `group_verb` MCP tool name (e.g. `figma_find`) for agents.
 | | `setup components` | List the components in a binding | — |
 | — | `figma-map mcp` | Run as an MCP server over stdio (for agents) | — |
 | — | `figma-map init [path]` | Scaffold the skill, config, and MCP registration into a project | — |
+| — | `figma-map update` | Update the CLI, backend bundle, Figma plugin, and config schema | — |
+| — | `figma-map uninstall` | Remove the CLI binary, cached bundles, and `~/.figma-map` state | — |
 
 Pass `--file <fileKey>` to any command when multiple Figma files are connected,
 and `--json` for machine-readable output. Run `figma-map <group> <command> --help`

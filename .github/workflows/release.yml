@@ -21,6 +21,79 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: extensions/.nvmrc
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # The Figma plugin's dist/ is gitignored (it's a build artifact), so a
+      # source checkout or the Go release archive alone never contains a
+      # loadable plugin. Build it here and ship it as its own release asset
+      # so installing figma-map doesn't also require a Node toolchain.
+      - name: build figma plugin
+        run: |
+          cd extensions/plugin
+          npm ci
+          npm run build
+
+      - name: package figma plugin
+        run: |
+          mkdir -p figma-map-plugin
+          cp extensions/plugin/manifest.json figma-map-plugin/
+          cp -r extensions/plugin/dist figma-map-plugin/dist
+          zip -r figma-map-plugin.zip figma-map-plugin
+
+      # The backend is Node/TS source with a gitignored dist/ (same story as
+      # the plugin) and previously required a full checkout + `npm install`
+      # (undocumented) + `npm run build` just to run `bridge up`. Compile it
+      # to a standalone binary per platform (bun bundles the JS runtime in,
+      # so the machine running figma-map needs no Node install for this) and
+      # ship each as its own release asset — bridge up fetches the one
+      # matching its own version instead of requiring a source checkout.
+      - name: build figma backend
+        run: |
+          cd backend
+          bun install --frozen-lockfile
+          VERSION="${GITHUB_REF_NAME#v}"
+          declare -A targets=(
+            [linux_amd64]=bun-linux-x64
+            [linux_arm64]=bun-linux-arm64
+            [darwin_amd64]=bun-darwin-x64
+            [darwin_arm64]=bun-darwin-arm64
+            [windows_amd64]=bun-windows-x64
+          )
+          mkdir -p dist-bin
+          for pair in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64; do
+            target="${targets[$pair]}"
+            outfile="dist-bin/figma-bridge_${pair}"
+            bun build --compile --target="$target" --outfile "$outfile" src/index.ts
+            if [[ "$pair" == windows_* ]]; then
+              mkdir -p "pkg/$pair"
+              mv "${outfile}.exe" "pkg/$pair/figma-bridge.exe"
+              zip -j "../figma-map-backend_${VERSION}_${pair}.zip" "pkg/$pair/figma-bridge.exe"
+            else
+              mkdir -p "pkg/$pair"
+              mv "$outfile" "pkg/$pair/figma-bridge"
+              chmod +x "pkg/$pair/figma-bridge"
+              tar -C "pkg/$pair" -czf "../figma-map-backend_${VERSION}_${pair}.tar.gz" figma-bridge
+            fi
+          done
+          cd ..
+          ls figma-map-backend_*
+
+      # goreleaser's own checksums.txt only covers artifacts goreleaser
+      # itself builds (the Go archives) — extra_files (plugin zip, backend
+      # archives) need their own sidecar checksum so `bridge up`/`update`
+      # can verify what they fetch.
+      - name: checksum extra release assets
+        run: |
+          for f in figma-map-plugin.zip figma-map-backend_*; do
+            shasum -a 256 "$f" | awk '{print $1}' > "$f.sha256"
+          done
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
