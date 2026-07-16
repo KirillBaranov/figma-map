@@ -55,7 +55,7 @@ detect_os() {
 	case "$os" in
 		Linux)  echo "linux" ;;
 		Darwin) echo "darwin" ;;
-		*) die "unsupported OS: $os (use the Windows zip from GitHub Releases)" ;;
+		*) die "unsupported OS: $os (on Windows, use install.ps1 instead: irm https://raw.githubusercontent.com/${REPO}/main/install.ps1 | iex)" ;;
 	esac
 }
 

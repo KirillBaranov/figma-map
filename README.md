@@ -142,13 +142,21 @@ figma-map build map 13:1077                                 # generate code for 
 
 ### 1. Install the CLI
 
+**macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KirillBaranov/figma-map/main/install.sh | sh
 ```
 
-Detects your OS/arch, downloads the matching release, verifies its SHA-256
-checksum, and installs the binary. Override with `FIGMA_MAP_VERSION=v0.1.0`
-to pin a tag, or `FIGMA_MAP_INSTALL_DIR=~/bin` to choose the directory.
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/KirillBaranov/figma-map/main/install.ps1 | iex
+```
+
+Both detect your OS/arch, download the matching release, verify its SHA-256
+checksum, and install the binary. Override with `FIGMA_MAP_VERSION=v0.1.0` (or
+`-Version v0.1.0` on Windows) to pin a tag, or `FIGMA_MAP_INSTALL_DIR=~/bin`
+(`-InstallDir` on Windows) to choose the directory. Windows currently ships
+`amd64` only — no `arm64` release yet.
 
 Alternatives: `go install github.com/kirillbaranov/figma-map@latest`, or grab
 a prebuilt archive from the [releases page](https://github.com/KirillBaranov/figma-map/releases).

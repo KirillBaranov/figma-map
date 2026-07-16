@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-07-16
+
+### Added
+
+- **`install.ps1`** — a PowerShell installer for Windows, mirroring
+  `install.sh`: resolves the latest (or a pinned) release, downloads the
+  `windows/amd64` archive, verifies its SHA-256 checksum against
+  `checksums.txt`, installs to `%LOCALAPPDATA%\figma-map\bin`, and adds that
+  directory to the user `PATH` if it's missing. Invoked with
+  `irm .../install.ps1 | iex`, same as the existing `curl | sh` one-liner.
+
+### Fixed
+
+- **`figma-map update` now works on Windows.** It previously hard-errored on
+  `runtime.GOOS == "windows"` even though CI already publishes a
+  `windows/amd64` release archive. Fixed by: downloading and extracting the
+  `.zip` release asset goreleaser actually produces for Windows (was always
+  requesting `.tar.gz`); and replacing the running `figma-map.exe` by
+  renaming it aside first, since Windows allows renaming a running
+  executable but not overwriting it directly — the reverse of the
+  same-inode rename that works on Unix.
+- **`figma-map doctor` no longer misreports Chrome as missing on Windows.**
+  `findChrome` only ever checked Unix binary names plus macOS app-bundle
+  paths; a stock Windows Chrome install (`%ProgramFiles%`,
+  `%ProgramFiles(x86)%`, or `%LocalAppData%`) was never looked at, so
+  `doctor` would fail the Chrome check even with Chrome installed.
+
 ## [0.9.1] - 2026-07-15
 
 ### Added

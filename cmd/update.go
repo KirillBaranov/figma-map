@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -45,11 +46,6 @@ func newUpdateCmd(info BuildInfo) *cobra.Command {
 
 func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVersion string) error {
 	out := c.OutOrStdout()
-
-	if runtime.GOOS == "windows" {
-		return fmt.Errorf("figma-map update does not support Windows yet — download the zip from " +
-			"https://github.com/" + updateRepo + "/releases/latest")
-	}
 
 	target := wantVersion
 	if target == "" {
@@ -99,6 +95,9 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 	installDir := filepath.Dir(installPath)
 
 	if err := checkWritable(installDir); err != nil {
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("%s is not writable: %w\nre-run from an elevated shell, or reinstall with install.ps1", installDir, err)
+		}
 		return fmt.Errorf("%s is not writable: %w\nre-run with sudo, or reinstall with install.sh", installDir, err)
 	}
 
@@ -145,16 +144,38 @@ func runUpdate(c *cobra.Command, info BuildInfo, checkOnly, force bool, wantVers
 		return fmt.Errorf("chmod new binary: %w", err)
 	}
 
-	// Renaming over the running executable is safe on Unix: the process
-	// keeps its already-open inode; the path just starts pointing at the
-	// new file for the next launch.
-	if err := os.Rename(stagedPath, installPath); err != nil {
-		return fmt.Errorf("install new binary to %s: %w", installPath, err)
+	if runtime.GOOS == "windows" {
+		// Windows won't let us rename a new file over the currently-running
+		// .exe directly (the image is locked), but it does allow renaming
+		// the running .exe itself aside — Windows only blocks deleting or
+		// overwriting the file backing a running image, not moving it.
+		oldPath := installPath + ".old"
+		_ = os.Remove(oldPath) // best-effort cleanup from a previous update
+		if err := os.Rename(installPath, oldPath); err != nil {
+			return fmt.Errorf("move running binary aside: %w", err)
+		}
+		if err := os.Rename(stagedPath, installPath); err != nil {
+			_ = os.Rename(oldPath, installPath) // best-effort restore
+			return fmt.Errorf("install new binary to %s: %w", installPath, err)
+		}
+		_ = os.Remove(oldPath) // best-effort; harmless if still locked, cleaned up on next update
+	} else {
+		// Renaming over the running executable is safe on Unix: the process
+		// keeps its already-open inode; the path just starts pointing at the
+		// new file for the next launch.
+		if err := os.Rename(stagedPath, installPath); err != nil {
+			return fmt.Errorf("install new binary to %s: %w", installPath, err)
+		}
 	}
 
 	_, _ = fmt.Fprintf(out, "updated %s -> %s (%s)\n", current, target, installPath)
-	_, _ = fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
-		"(lsof -nP -iTCP:1994 -sTCP:LISTEN, then kill it and let it respawn)")
+	if runtime.GOOS == "windows" {
+		_, _ = fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
+			`(netstat -ano | findstr :1994, then taskkill /PID <pid> /F and let it respawn)`)
+	} else {
+		_, _ = fmt.Fprintln(out, "note: any already-running figma-map backend keeps the old code until restarted "+
+			"(lsof -nP -iTCP:1994 -sTCP:LISTEN, then kill it and let it respawn)")
+	}
 	return nil
 }
 
@@ -204,8 +225,13 @@ func latestReleaseTag() (string, error) {
 // plus the binary name to look for inside it.
 func downloadRelease(dir, tag string) (archivePath, binaryName string, err error) {
 	binaryName = "figma-map"
+	ext := "tar.gz"
+	if runtime.GOOS == "windows" {
+		binaryName = "figma-map.exe"
+		ext = "zip"
+	}
 	version := strings.TrimPrefix(tag, "v")
-	archive := fmt.Sprintf("%s_%s_%s_%s.tar.gz", binaryName, version, runtime.GOOS, runtime.GOARCH)
+	archive := fmt.Sprintf("%s_%s_%s_%s.%s", "figma-map", version, runtime.GOOS, runtime.GOARCH, ext)
 	baseURL := "https://github.com/" + updateRepo + "/releases/download/" + tag
 
 	archivePath = filepath.Join(dir, archive)
@@ -282,6 +308,13 @@ func sha256File(path string) (string, error) {
 }
 
 func extractBinary(archivePath, destDir, binaryName string) (string, error) {
+	if strings.HasSuffix(archivePath, ".zip") {
+		return extractBinaryFromZip(archivePath, destDir, binaryName)
+	}
+	return extractBinaryFromTarGz(archivePath, destDir, binaryName)
+}
+
+func extractBinaryFromTarGz(archivePath, destDir, binaryName string) (string, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return "", err
@@ -319,4 +352,38 @@ func extractBinary(archivePath, destDir, binaryName string) (string, error) {
 		_ = out.Close()
 		return outPath, nil
 	}
+}
+
+func extractBinaryFromZip(archivePath, destDir, binaryName string) (string, error) {
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = zr.Close() }()
+
+	for _, zf := range zr.File {
+		if filepath.Base(zf.Name) != binaryName || zf.FileInfo().IsDir() {
+			continue
+		}
+
+		rc, err := zf.Open()
+		if err != nil {
+			return "", err
+		}
+
+		outPath := filepath.Join(destDir, binaryName)
+		out, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+		if err != nil {
+			_ = rc.Close()
+			return "", err
+		}
+		_, copyErr := io.Copy(out, rc)
+		_ = rc.Close()
+		_ = out.Close()
+		if copyErr != nil {
+			return "", copyErr
+		}
+		return outPath, nil
+	}
+	return "", fmt.Errorf("binary %s not found in archive", binaryName)
 }

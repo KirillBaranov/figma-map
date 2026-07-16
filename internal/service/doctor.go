@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -75,11 +76,24 @@ func pluginConnected(ctx context.Context, s *Service, bridgeErr error) error {
 // findChrome locates a Chrome/Chromium binary the way chromedp does.
 func findChrome() error {
 	candidates := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"}
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		candidates = append(candidates,
 			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 			"/Applications/Chromium.app/Contents/MacOS/Chromium",
 		)
+	case "windows":
+		candidates = append(candidates, "chrome.exe")
+		for _, envVar := range []string{"ProgramFiles", "ProgramFiles(x86)", "LocalAppData"} {
+			base := os.Getenv(envVar)
+			if base == "" {
+				continue
+			}
+			candidates = append(candidates,
+				base+`\Google\Chrome\Application\chrome.exe`,
+				base+`\Chromium\Application\chrome.exe`,
+			)
+		}
 	}
 	for _, c := range candidates {
 		if _, err := exec.LookPath(c); err == nil {
