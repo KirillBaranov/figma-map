@@ -11,6 +11,11 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    # A normal run completes in ~2 minutes; this bounds a hung step (seen
+    # twice: goreleaser-action stalling well past 15+ minutes, likely
+    # GitHub API flakiness on the release/upload calls) instead of silently
+    # burning CI minutes for hours.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -97,9 +102,13 @@ jobs:
             shasum -a 256 "$f" | awk '{print $1}' > "$f.sha256"
           done
 
+      # --verbose: if this hangs again (seen twice, both times stalling
+      # past 15+ min with no error — likely GitHub API flakiness on the
+      # release-creation/asset-upload calls), the extra log detail should
+      # show which specific call it's stuck on.
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
