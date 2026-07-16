@@ -25,9 +25,12 @@ jobs:
         with:
           node-version-file: extensions/.nvmrc
 
+      # Pinned (not "latest"): setup-bun resolves "latest" via a GitHub API
+      # call to oven-sh/bun's tags, which has 503'd repeatedly in CI —
+      # pinning avoids that lookup entirely. Bump deliberately when needed.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       # The Figma plugin's dist/ is gitignored (it's a build artifact), so a
       # source checkout or the Go release archive alone never contains a

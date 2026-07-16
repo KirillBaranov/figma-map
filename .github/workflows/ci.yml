@@ -127,9 +127,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: extensions/.nvmrc
+      # Pinned (not "latest") — see release.yml's identical setup-bun step
+      # for why.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       # Builds a "fake release" (CLI, backend, plugin) at two versions and
       # runs install.sh -> bridge up -> doctor -> update -> uninstall
       # against it inside ubuntu/debian/alpine containers — see
