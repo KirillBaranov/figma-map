@@ -63,8 +63,14 @@ Then tell your agent (Claude Code, Cursor, Codex CLI, …):
 > https://raw.githubusercontent.com/KirillBaranov/figma-map/main/.claude/skills/figma-map-setup/SKILL.md
 > and follow it to set up figma-map in this project.
 
-No `git clone` needed just for this — the agent only needs to read that one
-file, not run anything from a checkout.
+This one has to come from GitHub, not disk: it's the one-time bootstrap
+skill that walks the agent through running `init` in the first place, so
+before `init` has run once, no local copy of it exists anywhere to read
+instead. (The day-to-day `figma-map` skill is the opposite — it ships
+embedded in the CLI binary itself, and `init` writes it straight into your
+project, no network fetch needed.) No `git clone` needed just for this —
+the agent only needs to read that one file, not run anything from a
+checkout.
 
 From here the agent confirms the CLI is on `$PATH`, starts the bridge, runs
 `init`, and registers itself as an MCP server for you — pausing only once,
