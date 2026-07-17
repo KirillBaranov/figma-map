@@ -240,6 +240,25 @@ try {
     Write-Host "Uninstall:" -NoNewline -ForegroundColor White
     Write-Host " figma-map uninstall" -ForegroundColor Cyan
 
+    $ManifestPath = Join-Path $PluginDir "manifest.json"
+    if (Test-Path $ManifestPath) {
+        Write-Host ""
+        Write-Host "Load the plugin in Figma (one-time):" -ForegroundColor White
+        Write-Host "  Figma -> Plugins -> Development -> Import plugin from manifest..."
+        Write-Host "  select: $ManifestPath" -ForegroundColor Cyan
+        try {
+            Set-Clipboard -Value $PluginDir
+            Write-Host "  (folder path copied to your clipboard - paste it into the dialog's" -ForegroundColor DarkGray
+            Write-Host "  filename box to jump straight there - .figma-map is a hidden folder)" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "  (.figma-map is a hidden folder - your file picker may not show it by" -ForegroundColor DarkGray
+            Write-Host "  default; paste the path above directly into the dialog's filename box)" -ForegroundColor DarkGray
+        }
+        try {
+            Start-Process explorer.exe -ArgumentList "/select,`"$ManifestPath`""
+        } catch {}
+    }
+
     Write-Host ""
     Write-Host "Next:" -NoNewline -ForegroundColor White
     Write-Host " open your coding agent and paste:"

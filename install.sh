@@ -90,6 +90,23 @@ else
 	die "need curl or wget installed"
 fi
 
+# copy_to_clipboard copies $1 to the system clipboard, trying whichever tool
+# is available (macOS pbcopy, X11 xclip/xsel, Wayland wl-copy). Best-effort:
+# returns non-zero and does nothing else if no clipboard tool is found —
+# callers should fall back to just printing the path.
+copy_to_clipboard() {
+	if command -v pbcopy >/dev/null 2>&1; then
+		printf '%s' "$1" | pbcopy 2>/dev/null && return 0
+	elif command -v xclip >/dev/null 2>&1; then
+		printf '%s' "$1" | xclip -selection clipboard 2>/dev/null && return 0
+	elif command -v xsel >/dev/null 2>&1; then
+		printf '%s' "$1" | xsel --clipboard --input 2>/dev/null && return 0
+	elif command -v wl-copy >/dev/null 2>&1; then
+		printf '%s' "$1" | wl-copy 2>/dev/null && return 0
+	fi
+	return 1
+}
+
 resolve_version() {
 	if [ -n "${FIGMA_MAP_VERSION:-}" ]; then
 		echo "$FIGMA_MAP_VERSION"
@@ -304,6 +321,24 @@ main() {
 	printf '  plugin   %s\n' "${HOME}/.figma-map/plugin/"
 	printf '\n%sUpdate:%s   figma-map update\n' "$BOLD" "$RESET"
 	printf '%sUninstall:%s figma-map uninstall\n' "$BOLD" "$RESET"
+
+	manifest="${HOME}/.figma-map/plugin/manifest.json"
+	plugin_dir="${HOME}/.figma-map/plugin"
+	if [ -f "$manifest" ]; then
+		printf '\n%sLoad the plugin in Figma (one-time):%s\n' "$BOLD" "$RESET"
+		printf '  Figma → Plugins → Development → Import plugin from manifest…\n'
+		printf '  select: %s%s%s\n' "$BOLD" "$manifest" "$RESET"
+		if copy_to_clipboard "$plugin_dir"; then
+			printf '  %s(path copied to your clipboard — in the file dialog, Cmd+Shift+G / Ctrl+L\n' "$DIM"
+			printf '  then paste to jump straight there — ~/.figma-map is a hidden folder)%s\n' "$RESET"
+		else
+			printf '  %s(~/.figma-map is a hidden folder — your file picker won'"'"'t show it by\n' "$DIM"
+			printf '  default; use "Go to folder"/"show hidden files" and paste the path above)%s\n' "$RESET"
+		fi
+		if [ "$OS" = "darwin" ] && command -v open >/dev/null 2>&1; then
+			open -R "$manifest" 2>/dev/null || true
+		fi
+	fi
 
 	printf '\n%sNext:%s open your coding agent and paste:\n\n' "$BOLD" "$RESET"
 	printf '  %s"figma-map is installed — read the figma-map-setup skill and finish setting it up for this project."%s\n\n' "$CYAN" "$RESET"

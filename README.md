@@ -211,11 +211,17 @@ for contributors building the backend from source instead of using a
 release bundle.
 
 Then, **once**, load the plugin into Figma. The installer already unpacked
-it to `~/.figma-map/plugin/` — no separate download or build step:
+it to `~/.figma-map/plugin/` — no separate download or build step, and on
+macOS/Windows it opens a Finder/Explorer window at that folder for you at
+the end of the install:
 
 1. Open your Figma file (desktop app).
 2. **Plugins → Development → Import plugin from manifest…**
-3. Select `manifest.json` from `~/.figma-map/plugin/`.
+3. Select `manifest.json` from `~/.figma-map/plugin/`. `~/.figma-map` is a
+   hidden dotfolder, so a plain file-picker click-through won't find it —
+   either use the Finder window the installer already opened, or jump there
+   directly: **Cmd+Shift+G** on macOS (paste `~/.figma-map/plugin`), or
+   paste the full path into the filename box on Windows.
 4. Run it once (**Plugins → Development → Figma MAP Bridge**) — it connects
    over WebSocket to the backend you just started and stays connected while
    the file is open.
