@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-17
+
+### Fixed
+
+- **Finding the Figma plugin's `manifest.json` during install.** `~/.figma-map`
+  is a hidden dotfolder, so Figma's "Import plugin from manifest…" file
+  picker didn't surface it by default. `install.sh`/`install.ps1` now print
+  the exact path, copy the plugin folder to the clipboard, and reveal it in
+  Finder/Explorer (best-effort, macOS/Windows); the manual-install
+  instructions in the README call out the hidden folder and the
+  Cmd+Shift+G/Ctrl+L shortcut to jump straight there. Found by walking the
+  documented install path end-to-end right after 0.11.0 shipped.
+
 ## [0.11.0] - 2026-07-17
 
 ### Added
