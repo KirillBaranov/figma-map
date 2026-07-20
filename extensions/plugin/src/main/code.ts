@@ -388,14 +388,16 @@ async function streamOrInline(
   cache: VariableCache,
   pool: ConcurrencyPool,
   emit: StreamSink["emit"],
-  path: number[]
+  path: number[],
+  lean = false,
+  includeRenderBounds = false
 ): Promise<void> {
   const childCount = "children" in node ? node.children.filter((c) => c.visible !== false).length : 0;
   if (childCount > CHUNK_CHILD_THRESHOLD) {
-    await serializeNode(node, depth, 0, cache, false, pool, { emit, path });
+    await serializeNode(node, depth, 0, cache, lean, pool, includeRenderBounds, { emit, path });
     return;
   }
-  const data = await serializeNode(node, depth, 0, cache, false, pool);
+  const data = await serializeNode(node, depth, 0, cache, lean, pool, includeRenderBounds);
   emit(path, data);
 }
 
@@ -438,6 +440,49 @@ async function handleGetSelection(request: ServerRequest) {
   return undefined;
 }
 
+// getNodeCache holds fully-materialized get_node results (small subtrees
+// only — see handleGetNode) keyed by nodeId+depth+lean+includeRenderBounds,
+// so a verify-loop that re-fetches the same node between iterations without
+// the design changing hits cache instead of re-walking/re-serializing.
+// Coarse-grained on purpose: cleared entirely on any documentchange, rather
+// than tracking a precise per-node dirty-set — correct either way (never
+// serves stale data across a real edit), just less cache-hit-optimal than
+// the finer-grained version would be. Capped so a long session that queries
+// many distinct (node, options) combinations can't grow it unbounded.
+const NODE_CACHE_LIMIT = 50;
+const getNodeCache = new Map<string, unknown>();
+// The manifest's "dynamic-page" documentAccess loads pages lazily; the
+// "documentchange" event requires full document access, so it can only be
+// registered after explicitly opting into loading everything up front.
+void figma.loadAllPagesAsync().then(() => {
+  figma.on("documentchange", () => {
+    if (getNodeCache.size > 0) {
+      console.error(`documentchange: invalidating ${getNodeCache.size} cached get_node result(s)`);
+      getNodeCache.clear();
+    }
+  });
+});
+
+function cacheNodeResult(key: string, data: unknown): void {
+  getNodeCache.set(key, data);
+  if (getNodeCache.size > NODE_CACHE_LIMIT) {
+    const oldest = getNodeCache.keys().next().value;
+    if (oldest != undefined) getNodeCache.delete(oldest);
+  }
+}
+
+// get_node used to always return one fully-nested, non-streamed value —
+// fine for small subtrees, but a large one (e.g. no --depth on a whole
+// section) would build the entire result in memory and hand it to
+// figma.ui.postMessage() in a single synchronous structured-clone, exactly
+// the failure mode get_document/get_selection already fixed via
+// streamOrInline (see CHUNK_CHILD_THRESHOLD). Routes through the same path
+// now, so a large get_node gets the same chunked streaming and early
+// -cancellation support (activePools) those two already have. Small
+// subtrees (below the threshold) additionally get cached — see
+// getNodeCache; large ones deliberately aren't cached, since caching them
+// would mean holding the whole thing in memory anyway, undoing exactly what
+// streaming avoids.
 async function handleGetNode(request: ServerRequest) {
   const nodeId = request.nodeIds?.[0];
   if (!nodeId) throw new Error("nodeIds is required for get_node");
@@ -447,7 +492,49 @@ async function handleGetNode(request: ServerRequest) {
 
   const depth = typeof request.params?.depth === "number" ? request.params.depth : undefined;
   const lean = request.params?.lean === true;
-  return serializeNode(node as SceneNode, depth, 0, undefined, lean);
+  const includeRenderBounds = request.params?.includeRenderBounds === true;
+  const cacheKey = `${nodeId}:${depth ?? ""}:${lean}:${includeRenderBounds}`;
+  const emit = makeStreamSink(request.type, request.requestId).emit;
+
+  const cached = getNodeCache.get(cacheKey);
+  if (cached !== undefined) {
+    emit([], cached);
+    return undefined;
+  }
+
+  const childCount =
+    "children" in node ? node.children.filter((c) => c.visible !== false).length : 0;
+  const pool = createConcurrencyPool();
+  activePools.set(request.requestId, pool);
+  try {
+    if (childCount <= CHUNK_CHILD_THRESHOLD) {
+      const data = await serializeNode(
+        node as SceneNode,
+        depth,
+        0,
+        createVariableCache(),
+        lean,
+        pool,
+        includeRenderBounds
+      );
+      cacheNodeResult(cacheKey, data);
+      emit([], data);
+      return undefined;
+    }
+    await streamOrInline(
+      node as SceneNode,
+      depth,
+      createVariableCache(),
+      pool,
+      emit,
+      [],
+      lean,
+      includeRenderBounds
+    );
+  } finally {
+    activePools.delete(request.requestId);
+  }
+  return undefined;
 }
 
 async function handleFindNodes(request: ServerRequest) {

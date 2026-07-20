@@ -28,6 +28,12 @@ const INACTIVITY_TIMEOUT_MS = 60_000;
 // arrived.
 const CHUNK_STALL_TIMEOUT_MS = 90_000;
 const STALL_WATCHDOG_INTERVAL_MS = 10_000;
+// How long a request can go without real progress (a chunk) before the
+// connection is reported "dormant" rather than "connected" — well short of
+// CHUNK_STALL_TIMEOUT_MS's hard reject, so an agent calling list_files (or
+// doctor) mid-request sees an honest "the tab looks backgrounded" instead of
+// silently waiting the full 90s alongside the stuck request itself.
+const DORMANT_THRESHOLD_MS = 15_000;
 
 // One node of the reassembly tree for a "chunk"-streamed result, addressed
 // purely structurally by path — see BridgeResponse's `path`/`containerType`/
@@ -68,6 +74,7 @@ interface PendingRequest {
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   ws: WebSocket;
+  fileKey: string;
   startedAt: number;
   acked: boolean;
   lastProgress?: { done: number; total: number };
@@ -85,6 +92,12 @@ interface ConnectionEntry {
   ws: WebSocket;
   fileKey: string;
   fileName: string;
+  // "dormant" means a request against this connection is going without real
+  // progress for DORMANT_THRESHOLD_MS — inferred from request behavior (see
+  // checkStalledRequests), not a true ambient probe: there's no standing
+  // heartbeat independent of an in-flight request today. Reset to
+  // "connected" the moment any chunk (real progress) arrives.
+  status: "connected" | "dormant";
 }
 
 export class Bridge {
@@ -106,6 +119,21 @@ export class Bridge {
   // progress has genuinely stopped.
   private checkStalledRequests(): void {
     const now = Date.now();
+    for (const pending of this.pending.values()) {
+      // Dormant: acked (the plugin process is alive) but no real progress
+      // (a chunk) for DORMANT_THRESHOLD_MS. Deliberately not gated on
+      // pending.chunkRoot — a non-streamed request (e.g. get_node) never
+      // sends a "chunk" message at all, only heartbeats, so lastChunkAt
+      // stays at its initial startedAt value and this still fires. This is
+      // a status flip only, not a reject — the hard CHUNK_STALL_TIMEOUT_MS
+      // reject below (chunked requests only) and the sliding
+      // INACTIVITY_TIMEOUT_MS/ACK_GRACE_MS timers elsewhere still own
+      // actually failing the request.
+      if (pending.acked && now - pending.lastChunkAt > DORMANT_THRESHOLD_MS) {
+        const entry = this.connections.get(pending.fileKey);
+        if (entry) entry.status = "dormant";
+      }
+    }
     for (const [requestId, pending] of this.pending) {
       if (pending.chunkRoot && now - pending.lastChunkAt > CHUNK_STALL_TIMEOUT_MS) {
         clearTimeout(pending.timer);
@@ -157,7 +185,7 @@ export class Bridge {
     if (existing) {
       existing.ws.close();
     }
-    this.connections.set(fileKey, { ws, fileKey, fileName });
+    this.connections.set(fileKey, { ws, fileKey, fileName, status: "connected" });
     console.error(`Plugin connected: ${fileName} (${fileKey})`);
 
     ws.on("message", (data) => {
@@ -192,6 +220,8 @@ export class Bridge {
         if (resp.kind === "chunk") {
           pending.acked = true;
           pending.lastChunkAt = Date.now();
+          const entry = this.connections.get(fileKey);
+          if (entry) entry.status = "connected"; // real progress → not dormant
           if (!pending.chunkRoot) pending.chunkRoot = { children: new Map() };
           const node = getOrCreateChunkNode(pending.chunkRoot, resp.path ?? []);
           node.data = resp.data;
@@ -206,6 +236,10 @@ export class Bridge {
 
         clearTimeout(pending.timer);
         this.pending.delete(resp.requestId);
+        if (!resp.error) {
+          const entry = this.connections.get(fileKey);
+          if (entry) entry.status = "connected"; // completed → not dormant
+        }
         const elapsed = Date.now() - pending.startedAt;
         if (resp.error) {
           console.error(
@@ -232,7 +266,8 @@ export class Bridge {
       }
       this.rejectPendingForSocket(
         ws,
-        `Plugin disconnected: ${fileName} (${fileKey})`
+        `Plugin disconnected: ${fileName} (${fileKey})`,
+        fileKey
       );
     });
 
@@ -244,19 +279,46 @@ export class Bridge {
       }
       this.rejectPendingForSocket(
         ws,
-        `Plugin connection error (${fileName}): ${err.message}`
+        `Plugin connection error (${fileName}): ${err.message}`,
+        fileKey
       );
     });
   }
 
-  private rejectPendingForSocket(ws: WebSocket, reason: string): void {
+  // fileKey, when given, lets a fast reconnect resume in-flight requests
+  // instead of failing them: handleConnection closes the old socket and
+  // registers the new one *before* the old socket's close event fires here,
+  // so if this.connections.get(fileKey) already points elsewhere, that's a
+  // replacement plugin instance for the same file, not really "gone" — the
+  // agent's original call keeps waiting (a bit longer), it doesn't need to
+  // retry itself. Falls back to rejecting when there's no replacement (a
+  // genuine disconnect) — unchanged from before.
+  private rejectPendingForSocket(ws: WebSocket, reason: string, fileKey?: string): void {
+    const replacement = fileKey ? this.connections.get(fileKey) : undefined;
+    const resumable = replacement && replacement.ws !== ws && replacement.ws.readyState === WebSocket.OPEN;
+
     for (const [id, p] of this.pending) {
-      if (p.ws === ws) {
-        clearTimeout(p.timer);
-        this.pending.delete(id);
-        console.error(`✗ ${id} dropped: ${reason}`);
-        p.reject(new Error(reason));
+      if (p.ws !== ws) continue;
+      if (resumable) {
+        console.error(`↻ ${id} resuming on reconnected plugin (${fileKey})`);
+        p.ws = replacement.ws;
+        p.acked = false;
+        p.lastChunkAt = Date.now();
+        this.armTimer(id, p);
+        replacement.ws.send(JSON.stringify(p.request), (err) => {
+          if (err) {
+            clearTimeout(p.timer);
+            this.pending.delete(id);
+            console.error(`✗ ${id} resume failed: ${err.message}`);
+            p.reject(err);
+          }
+        });
+        continue;
       }
+      clearTimeout(p.timer);
+      this.pending.delete(id);
+      console.error(`✗ ${id} dropped: ${reason}`);
+      p.reject(new Error(reason));
     }
   }
 
@@ -319,7 +381,7 @@ export class Bridge {
    * - If only one file is connected and no fileKey given, use it (backward compat).
    * - If multiple files connected and no fileKey, throw with a helpful message.
    */
-  private resolveConnection(fileKey?: string): WebSocket {
+  private resolveConnection(fileKey?: string): ConnectionEntry {
     if (fileKey) {
       const entry = this.connections.get(fileKey);
       if (!entry) {
@@ -330,7 +392,7 @@ export class Bridge {
             : " No files are currently connected.";
         throw new Error(`No plugin connected for fileKey "${fileKey}".${hint}`);
       }
-      return entry.ws;
+      return entry;
     }
 
     if (this.connections.size === 0) {
@@ -340,8 +402,7 @@ export class Bridge {
     }
 
     if (this.connections.size === 1) {
-      const entry = this.connections.values().next().value!;
-      return entry.ws;
+      return this.connections.values().next().value!;
     }
 
     const files = this.listConnectedFiles();
@@ -354,6 +415,7 @@ export class Bridge {
     return [...this.connections.values()].map((entry) => ({
       fileKey: entry.fileKey,
       fileName: entry.fileName,
+      status: entry.status,
     }));
   }
 
@@ -372,13 +434,15 @@ export class Bridge {
     fileKey?: string
   ): Promise<BridgeResponse> {
     return new Promise((resolve, reject) => {
-      let conn: WebSocket;
+      let entry: ConnectionEntry;
       try {
-        conn = this.resolveConnection(fileKey);
+        entry = this.resolveConnection(fileKey);
       } catch (err) {
         reject(err);
         return;
       }
+      const conn = entry.ws;
+      const resolvedFileKey = entry.fileKey;
 
       if (conn.readyState !== WebSocket.OPEN) {
         reject(new Error("Plugin not connected"));
@@ -407,6 +471,7 @@ export class Bridge {
         reject,
         timer: setTimeout(() => this.handleTimeout(requestId), ACK_GRACE_MS),
         ws: conn,
+        fileKey: resolvedFileKey,
         startedAt,
         acked: false,
         requestType,

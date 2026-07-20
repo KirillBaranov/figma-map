@@ -145,7 +145,11 @@ func (o Op[In, Out]) AddCLI(parent *cobra.Command, get func() *service.Service) 
 
 // AddMCP registers this op as an MCP tool over the same Run.
 func (o Op[In, Out]) AddMCP(srv *mcp.Server, svc *service.Service) {
-	mcp.AddTool(srv, &mcp.Tool{Name: o.mcpName(), Description: o.Summary},
+	desc := o.Summary
+	if o.Long != "" {
+		desc = o.Summary + "\n\n" + o.Long
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: o.mcpName(), Description: desc},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 			// The CLI gets its `default` tag values from cobra flag defaults
 			// (clibind.Register); MCP unmarshals JSON straight into `in` with
@@ -160,6 +164,13 @@ func (o Op[In, Out]) AddMCP(srv *mcp.Server, svc *service.Service) {
 				return nil, out, err
 			}
 			res := &mcp.CallToolResult{}
+			// Give the agent the same human-readable report the CLI prints
+			// (e.g. "Fix these:" per-property is/should diffs), not just raw
+			// JSON — the SDK still fills StructuredContent with the full
+			// typed output below regardless of Content, so nothing is lost.
+			if o.Render != nil {
+				res.Content = append(res.Content, &mcp.TextContent{Text: o.Render(out)})
+			}
 			if o.Image != nil {
 				if data, mime := o.Image(out); len(data) > 0 {
 					res.Content = append(res.Content, &mcp.ImageContent{Data: data, MIMEType: mime})

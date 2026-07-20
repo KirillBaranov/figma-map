@@ -618,6 +618,7 @@ type reconcileIn struct {
 	URL      string `json:"url,omitempty" jsonschema:"URL rendering the implementation (alternative to story)"`
 	Image    string `json:"image,omitempty" jsonschema:"flat image path (no-DOM fallback, Tier 2 only)"`
 	Semantic bool   `json:"semantic,omitempty" jsonschema:"also run the Tier-2 semantic LLM check"`
+	GeoDiff  bool   `json:"geoDiff,omitempty" jsonschema:"geo-diff transformed elements: compare Figma's post-effects render bounds against the DOM's post-transform box instead of skipping the box check — catches transform-composition bugs (e.g. wrong rotate origin) invisible to declared-value comparison. Forces a Figma render per node, so opt-in."`
 }
 
 var reconcileOp = Op[reconcileIn, service.Diff]{
@@ -627,9 +628,15 @@ var reconcileOp = Op[reconcileIn, service.Diff]{
 	Long: "reconcile renders the implementation (story or url), reads its DOM " +
 		"computed styles, and diffs them against the Figma node's exact tokens — " +
 		"returning per-element is/should numbers, not a vision guess. Elements must " +
-		"carry data-figma-node=\"<id>\" to be measured.",
+		"carry data-figma-node=\"<id>\" to be measured. " +
+		"--geoDiff additionally compares Figma's post-effects render bounds against the " +
+		"DOM's post-transform box for CSS-transformed elements (rotated/scaled/skewed), " +
+		"instead of silently skipping the box check — reports render-x/render-y/render-width/" +
+		"render-height diffs that localize transform-composition bugs (e.g. a rotate applied " +
+		"around the wrong transform-origin) declared-value comparison can't see. Costs more " +
+		"(forces a Figma render per node), so opt-in.",
 	Run: func(ctx context.Context, s *service.Service, in reconcileIn) (service.Diff, error) {
-		return s.Reconcile(ctx, in.File, in.NodeID, in.Story, in.URL, in.Image, in.Semantic)
+		return s.Reconcile(ctx, in.File, in.NodeID, in.Story, in.URL, in.Image, in.Semantic, in.GeoDiff)
 	},
 	Render: renderReconcile,
 }
@@ -738,6 +745,7 @@ type pixelDiffIn struct {
 	GridSize  int     `json:"gridSize,omitempty"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
 	Selector  string  `json:"selector,omitempty"  jsonschema:"CSS selector (or a bare Figma node id, expanded to [data-figma-node=\"<id>\"]) scoping the implementation screenshot to one element instead of the whole viewport — use this to diff a section that lives mid-page, not rendered as its own isolated story/HTML"`
 	Width     int     `json:"width,omitempty"     jsonschema:"browser viewport width in CSS px, only used with --selector (default 1280 — a scoped section's layout is usually driven by its page/container width, not its own size)"`
+	Cluster   bool    `json:"cluster,omitempty"   jsonschema:"also compute Clusters/Issues: real connected-component diff regions classified by likely cause (shift/color/other), not just a fixed grid — costs more, so opt-in"`
 }
 
 var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
@@ -756,7 +764,11 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 		"useful before there's a real implementation to point at. " +
 		"--selector scopes the implementation screenshot to one element (CSS selector or bare " +
 		"Figma node id) instead of the whole viewport, so a section that lives mid-page can be " +
-		"diffed without setting up isolation for it first.",
+		"diffed without setting up isolation for it first. " +
+		"--cluster additionally computes Clusters/Issues: real connected-component regions of the " +
+		"diff (not fixed grid cells), each classified as a shift (with the px offset that explains " +
+		"it), a color-only difference, or unclassified — read Issues for the same shape verify " +
+		"reconcile uses, or Clusters for the raw regions.",
 	Run: func(ctx context.Context, s *service.Service, in pixelDiffIn) (service.PixelDiffResult, error) {
 		return s.PixelDiff(ctx, in.File, in.NodeID, in.URL, service.PixelDiffOptions{
 			Threshold: in.Threshold,
@@ -766,6 +778,7 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 			Scale:     1,
 			Selector:  in.Selector,
 			Width:     in.Width,
+			Cluster:   in.Cluster,
 		})
 	},
 	Render: func(r service.PixelDiffResult) string {
@@ -785,6 +798,22 @@ var pixelDiffOp = Op[pixelDiffIn, service.PixelDiffResult]{
 				s += fmt.Sprintf("\n    (%d,%d,%d×%d): %.2f%%", reg.X, reg.Y, reg.W, reg.H, reg.DiffPct)
 			}
 		}
+		if n := len(r.Clusters); n > 0 {
+			top := r.Clusters
+			if n > 5 {
+				top = top[:5]
+			}
+			s += "\n  clusters (attributed):"
+			for _, c := range top {
+				switch c.Kind {
+				case "shift":
+					s += fmt.Sprintf("\n    (%d,%d,%d×%d) shift: offset (%d,%d)px, %d px differ",
+						c.X, c.Y, c.W, c.H, c.OffsetX, c.OffsetY, c.DiffPixels)
+				default:
+					s += fmt.Sprintf("\n    (%d,%d,%d×%d) %s: %d px differ", c.X, c.Y, c.W, c.H, c.Kind, c.DiffPixels)
+				}
+			}
+		}
 		if r.DiffOut != "" {
 			s += fmt.Sprintf("\n  diff image → %s", r.DiffOut)
 		}
@@ -801,6 +830,7 @@ type pixelDiffImagesIn struct {
 	ColorTol  int     `json:"colorTol,omitempty"  jsonschema:"per-channel color tolerance 0-255 (default 10)" default:"10"`
 	DiffOut   string  `json:"diffOut,omitempty"   jsonschema:"path to write annotated diff PNG (optional)"`
 	GridSize  int     `json:"gridSize,omitempty"  jsonschema:"break the diff into an NxN grid of per-cell diff% (default 4; negative disables)" default:"4"`
+	Cluster   bool    `json:"cluster,omitempty"   jsonschema:"also compute Clusters/Issues: real connected-component diff regions classified by likely cause (shift/color/other) — see verify pixeldiff --cluster"`
 }
 
 var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
@@ -811,7 +841,8 @@ var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
 		"browser render — for when both sides were already captured elsewhere (e.g. a browser " +
 		"extension grabbing a live-page crop) and there's no URL or node id to re-fetch from. " +
 		"Each image argument may be a local file path, a data:image/...;base64,... URI, or a " +
-		"bare base64 PNG string. Returns the same diffPct/match/Regions shape as `verify pixeldiff`.",
+		"bare base64 PNG string. Returns the same diffPct/match/Regions/Clusters shape as " +
+		"`verify pixeldiff`, including --cluster.",
 	Run: func(_ context.Context, _ *service.Service, in pixelDiffImagesIn) (service.PixelDiffResult, error) {
 		img1, err := loadImageInput(in.Image1)
 		if err != nil {
@@ -837,7 +868,7 @@ var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
 			gridSize = 0
 		}
 
-		diff, err := render.PixelDiff(img1, img2, colorTol, in.DiffOut != "", gridSize)
+		diff, err := render.PixelDiff(img1, img2, colorTol, in.DiffOut != "", gridSize, in.Cluster)
 		if err != nil {
 			return service.PixelDiffResult{}, fmt.Errorf("pixel diff: %w", err)
 		}
@@ -855,6 +886,13 @@ var pixelDiffImagesOp = Op[pixelDiffImagesIn, service.PixelDiffResult]{
 				DiffPct: math.Round(r.DiffPct*100) / 100,
 			})
 		}
+		for _, c := range diff.Clusters {
+			result.Clusters = append(result.Clusters, service.Cluster{
+				X: c.X, Y: c.Y, W: c.W, H: c.H,
+				DiffPixels: c.DiffPixels, Kind: c.Kind, OffsetX: c.OffsetX, OffsetY: c.OffsetY,
+			})
+		}
+		result.Issues = service.IssuesFromClusters(result.Clusters)
 
 		if in.DiffOut != "" && len(diff.DiffImage) > 0 {
 			if err := os.WriteFile(in.DiffOut, diff.DiffImage, 0o644); err != nil {

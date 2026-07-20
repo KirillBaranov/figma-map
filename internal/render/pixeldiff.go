@@ -28,6 +28,11 @@ type DiffResult struct {
 	// numbers, not an image a vision model has to interpret. Arithmetic
 	// bucketing only, not shape/cluster inference. Empty when gridSize<=0.
 	Regions []Region
+	// Clusters are real connected-component regions of the diff mask,
+	// classified by likely cause (shift/color/other) — see Cluster. Unlike
+	// Regions, these follow the actual shape of what differs and try to say
+	// why, not just where. Only computed when cluster=true (see PixelDiff).
+	Clusters []Cluster
 }
 
 // Region is one fixed-grid cell's diff percentage.
@@ -40,8 +45,10 @@ type Region struct {
 // tolerance (0–255); pixels within tolerance on all channels count as matching.
 // Set produceDiff=true to get an annotated diff image in the result. gridSize
 // buckets the comparison into a gridSize×gridSize grid for DiffResult.Regions;
-// 0 skips region computation.
-func PixelDiff(refPNG, gotPNG []byte, colorTol uint8, produceDiff bool, gridSize int) (DiffResult, error) {
+// 0 skips region computation. cluster=true additionally computes
+// DiffResult.Clusters (connected-component regions, classified by likely
+// cause) — opt-in since clustering costs more than the grid bucketing.
+func PixelDiff(refPNG, gotPNG []byte, colorTol uint8, produceDiff bool, gridSize int, cluster bool) (DiffResult, error) {
 	refImg, err := decodePNG(refPNG)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("decode reference image: %w", err)
@@ -64,6 +71,11 @@ func PixelDiff(refPNG, gotPNG []byte, colorTol uint8, produceDiff bool, gridSize
 	var diffImg *image.RGBA
 	if produceDiff {
 		diffImg = image.NewRGBA(image.Rect(0, 0, w, h))
+	}
+
+	var mask []bool
+	if cluster {
+		mask = make([]bool, w*h)
 	}
 
 	total := w * h
@@ -108,6 +120,9 @@ func PixelDiff(refPNG, gotPNG []byte, colorTol uint8, produceDiff bool, gridSize
 				if gridSize > 0 {
 					cellDiff[cell]++
 				}
+				if mask != nil {
+					mask[y*w+x] = true
+				}
 				if diffImg != nil {
 					// Red tint, brighter for larger differences.
 					intensity := uint8(math.Min(255, float64(maxCh)*2))
@@ -137,6 +152,10 @@ func PixelDiff(refPNG, gotPNG []byte, colorTol uint8, produceDiff bool, gridSize
 		result.Regions = buildRegions(gridSize, w, h, cellDiff, cellTotal)
 	}
 
+	if mask != nil {
+		result.Clusters = clusterAndClassify(ref, got, mask, w, h, colorTol)
+	}
+
 	if diffImg != nil {
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, diffImg); err != nil {
@@ -153,6 +172,47 @@ func PixelDiff(refPNG, gotPNG []byte, colorTol uint8, produceDiff bool, gridSize
 // screenshots taken with scale=1 so dimensions align before diffing.
 func ScreenshotViewport(url string, w, h int, scale float64) ([]byte, error) {
 	return screenshotViewport(url, w, h, scale)
+}
+
+// CropPNG decodes a PNG, crops it to (x, y, w, h) in pixels (clamped to the
+// image bounds), and re-encodes. Used to scope a full-frame/full-page
+// screenshot down to one region — e.g. the VLM tier sending only an
+// unresolved crop instead of the whole image (see reconcile_tier2.go).
+func CropPNG(data []byte, x, y, w, h int) ([]byte, error) {
+	img, err := decodePNG(data)
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	b := img.Bounds()
+	x = clampInt(x, 0, b.Max.X)
+	y = clampInt(y, 0, b.Max.Y)
+	// A requested region entirely outside the image (e.g. a crop rect from
+	// a different coordinate space than expected) would otherwise clamp to
+	// a 0×0 box, which the PNG encoder rejects — floor at 1px so cropping
+	// never errors on a bad-but-plausible region, it just returns
+	// (almost) nothing useful, which the caller's VLM call can still parse.
+	w = max(1, clampInt(w, 0, b.Max.X-x))
+	h = max(1, clampInt(h, 0, b.Max.Y-y))
+
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(dst, dst.Bounds(), img, image.Pt(x, y), draw.Src)
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 func decodePNG(data []byte) (image.Image, error) {

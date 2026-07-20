@@ -104,14 +104,19 @@ type Box struct {
 }
 
 // DOMElement is one rendered element. FigmaNode is the data-figma-node attribute
-// when present (exact alignment); Text and Box support tag-free spatial
-// alignment against an existing implementation.
+// when present (exact alignment); Text, AccessibleText, Class, and Box support
+// tag-free spatial alignment against an existing implementation.
 type DOMElement struct {
 	FigmaNode string            `json:"figmaNode"`
 	Tag       string            `json:"tag"`
 	Text      string            `json:"text,omitempty"`
-	Styles    map[string]string `json:"styles"`
-	Box       Box               `json:"box"`
+	// AccessibleText is aria-label, then alt, then title — whichever is set
+	// first — for elements with no own text (icons, images, instances).
+	// Lets alignment anchor on these the same way it anchors on real text.
+	AccessibleText string            `json:"accessibleText,omitempty"`
+	Class          string            `json:"class,omitempty"`
+	Styles         map[string]string `json:"styles"`
+	Box            Box               `json:"box"`
 }
 
 // extractJS collects every visible, sized element's computed styles, box, own
@@ -122,7 +127,7 @@ const extractJS = `(() => {
     'line-height','letter-spacing','text-align','border-top-left-radius',
     'border-top-width','border-top-color','padding-top','padding-right',
     'padding-bottom','padding-left','gap','column-gap','row-gap','opacity',
-    'transform','box-shadow'];
+    'transform','box-shadow','position'];
   const skip = new Set(['SCRIPT','STYLE','HEAD','META','LINK','TITLE','BR','NOSCRIPT','HTML']);
   const out = [];
   for (const el of document.querySelectorAll('*')) {
@@ -135,10 +140,13 @@ const extractJS = `(() => {
     props.forEach(p => { styles[p] = cs.getPropertyValue(p); });
     let text = '';
     for (const n of el.childNodes) { if (n.nodeType === 3) text += n.textContent; }
+    const accessibleText = el.getAttribute('aria-label') || el.getAttribute('alt') || el.getAttribute('title') || '';
     out.push({
       figmaNode: el.getAttribute('data-figma-node') || '',
       tag: el.tagName.toLowerCase(),
       text: text.trim().slice(0, 80),
+      accessibleText: accessibleText.trim().slice(0, 80),
+      class: (el.getAttribute('class') || '').trim().slice(0, 200),
       styles: styles,
       box: { x: r.x, y: r.y, width: r.width, height: r.height }
     });

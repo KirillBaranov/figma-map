@@ -68,8 +68,25 @@ func alignElements(want map[string]figmaTarget, els []render.DOMElement) (map[st
 			if typeCompatible(ft.typ, e) {
 				score += 0.1 // nudge ties toward the right kind of element
 			}
+			// Exact text content is the strongest anchor: two elements with
+			// identical geometry almost never share it by coincidence.
 			if ft.typ == "TEXT" && textOverlap(ft.text, e.Text) {
 				score += 0.3
+			}
+			// Weaker anchors, for any node type (not just TEXT): the design
+			// node's own name (e.g. a Figma instance "Icon/Search") against
+			// the DOM element's accessible text or class — a text-less icon
+			// or instance has no content to match on, but often carries an
+			// aria-label/alt or a class that echoes the component name. Tie
+			// -break weight only (smaller than the exact-content bonus above),
+			// since a name/class match is a much weaker signal than real
+			// matching text content.
+			if name := normalizeAnchorName(ft.name); name != "" {
+				if textOverlap(name, normalizeAnchorName(e.AccessibleText)) {
+					score += 0.15
+				} else if textOverlap(name, normalizeAnchorName(e.Class)) {
+					score += 0.1
+				}
 			}
 			if score > bestScore {
 				best, bestScore = i, score
@@ -147,4 +164,13 @@ func textOverlap(a, b string) bool {
 		return false
 	}
 	return strings.Contains(a, b) || strings.Contains(b, a)
+}
+
+// normalizeAnchorName turns a Figma layer/component name ("Icon/Search",
+// "button--primary") or a DOM class list into a space-separated word form,
+// so naming-convention punctuation doesn't block a containment match.
+func normalizeAnchorName(s string) string {
+	s = strings.ToLower(s)
+	replacer := strings.NewReplacer("/", " ", "-", " ", "_", " ", ".", " ")
+	return strings.Join(strings.Fields(replacer.Replace(s)), " ")
 }

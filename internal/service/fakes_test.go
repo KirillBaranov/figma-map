@@ -51,6 +51,9 @@ func (f *fakeSource) Node(_ context.Context, _ string, id string) (*figma.Node, 
 func (f *fakeSource) NodeWithDepth(ctx context.Context, fileKey, id string, _ int) (*figma.Node, error) {
 	return f.Node(ctx, fileKey, id)
 }
+func (f *fakeSource) NodeWithOptions(ctx context.Context, fileKey, id string, _ figma.NodeOptions) (*figma.Node, error) {
+	return f.Node(ctx, fileKey, id)
+}
 func (f *fakeSource) FindNodes(context.Context, string, figma.FindNodesOptions) ([]figma.FindMatch, error) {
 	return f.findMatches, nil
 }

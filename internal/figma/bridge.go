@@ -140,14 +140,26 @@ func (b *Bridge) DocumentWithDepth(ctx context.Context, fileKey string, depth in
 // single object or a one-element array depending on version, so both are
 // accepted.
 func (b *Bridge) Node(ctx context.Context, fileKey, id string) (*Node, error) {
-	return b.NodeWithDepth(ctx, fileKey, id, 0)
+	return b.NodeWithOptions(ctx, fileKey, id, NodeOptions{})
 }
 
 // NodeWithDepth implements Source.
 func (b *Bridge) NodeWithDepth(ctx context.Context, fileKey, id string, depth int) (*Node, error) {
+	return b.NodeWithOptions(ctx, fileKey, id, NodeOptions{Depth: depth})
+}
+
+// NodeWithOptions implements Source.
+func (b *Bridge) NodeWithOptions(ctx context.Context, fileKey, id string, opts NodeOptions) (*Node, error) {
 	req := rpcRequest{Tool: "get_node", NodeIDs: []string{id}, FileKey: fileKey}
-	if depth > 0 {
-		req.Params = map[string]any{"depth": depth}
+	params := map[string]any{}
+	if opts.Depth > 0 {
+		params["depth"] = opts.Depth
+	}
+	if opts.RenderBounds {
+		params["includeRenderBounds"] = true
+	}
+	if len(params) > 0 {
+		req.Params = params
 	}
 	data, err := b.rpc(ctx, req)
 	if err != nil {

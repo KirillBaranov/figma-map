@@ -212,6 +212,69 @@ func TestTier1_TransformSkipsBox(t *testing.T) {
 	}
 }
 
+func TestTier1_GeoDiffCatchesTransformCompositionBug(t *testing.T) {
+	// The slider case from the strategy doc: a transformed element whose
+	// declared box wouldn't tell us anything (see TestTier1_TransformSkipsBox
+	// above), but Figma's own post-effects renderBounds is available (geoDiff
+	// opted in) and disagrees with the DOM's post-transform box — that's a
+	// real transform-origin/composition bug, and it must be reported.
+	want := map[string]figmaTarget{
+		"x": {typ: "FRAME", name: "X", box: figma.Bounds{Width: 200, Height: 100}, tokens: &Tokens{Fill: "#fff"},
+			renderBounds: &figma.Bounds{X: 100, Y: 100, Width: 200, Height: 100}},
+	}
+	got := map[string]render.DOMElement{
+		"x": {FigmaNode: "x", Box: render.Box{X: 114, Y: 97, Width: 200, Height: 100}, Styles: map[string]string{
+			"background-color": "rgb(255,255,255)",
+			"transform":        "rotate(15deg)",
+		}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 1 {
+		t.Fatalf("expected a geo-diff finding, got %+v", byEl)
+	}
+	props := map[string]FieldDiff{}
+	for _, d := range byEl[0].Diffs {
+		props[d.Prop] = d
+	}
+	rx, ok := props["render-x"]
+	if !ok || rx.Is != "114px" || rx.Should != "100px" {
+		t.Errorf("render-x diff missing/wrong: %+v", props)
+	}
+	if rx.Advisory {
+		t.Error("a geo-diff mismatch is a real defect, not advisory")
+	}
+	if _, ok := props["render-width"]; ok {
+		t.Error("width matched (200 == 200), should not be flagged")
+	}
+}
+
+func TestTier1_GeoDiffSkippedWithoutRenderBounds(t *testing.T) {
+	// geoDiff not opted in (renderBounds nil) — must fall back to today's
+	// silent skip, not a false diff against the pre-transform declared box.
+	want := map[string]figmaTarget{
+		"x": {typ: "FRAME", name: "X", box: figma.Bounds{Width: 200, Height: 100}, tokens: &Tokens{Fill: "#fff"}},
+	}
+	got := map[string]render.DOMElement{
+		"x": {FigmaNode: "x", Box: render.Box{X: 999, Y: 999, Width: 400, Height: 200}, Styles: map[string]string{
+			"background-color": "rgb(255,255,255)",
+			"transform":        "rotate(15deg)",
+		}},
+	}
+	if byEl, _ := tier1Diff(want, got); len(byEl) != 0 {
+		t.Errorf("no renderBounds requested → should stay silent, got %+v", byEl)
+	}
+}
+
+func TestRelativeRenderBounds(t *testing.T) {
+	if relativeRenderBounds(nil, 10, 20) != nil {
+		t.Error("nil input should return nil")
+	}
+	got := relativeRenderBounds(&figma.Bounds{X: 110, Y: 120, Width: 50, Height: 60}, 10, 20)
+	if got == nil || got.X != 100 || got.Y != 100 || got.Width != 50 || got.Height != 60 {
+		t.Errorf("relativeRenderBounds = %+v, want {100,100,50,60}", got)
+	}
+}
+
 func TestTier1_MissingShadow(t *testing.T) {
 	want := map[string]figmaTarget{
 		"c": {typ: "FRAME", name: "Card", tokens: &Tokens{Shadow: true}},
@@ -239,6 +302,139 @@ func TestTier1_LetterSpacingNormalIsZero(t *testing.T) {
 	}
 	if b, _ := tier1Diff(want, got); len(b) != 0 {
 		t.Errorf("letter-spacing normal == 0 should not flag, got %+v", b)
+	}
+}
+
+func TestTier1_AbsoluteInAutoLayoutIsLinted(t *testing.T) {
+	// A DOM position:absolute inside a Figma auto-layout parent, where Figma
+	// itself never declared an escape hatch, is a structure-lint issue —
+	// independent of whether any pixel or token actually differs.
+	want := map[string]figmaTarget{
+		"child": {typ: "FRAME", name: "Child", parentAutoLayout: true, tokens: &Tokens{Fill: "#ffffff"}},
+	}
+	got := map[string]render.DOMElement{
+		"child": {FigmaNode: "child", Styles: map[string]string{
+			"background-color": "rgb(255, 255, 255)",
+			"position":         "absolute",
+		}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 1 || len(byEl[0].Diffs) != 1 || byEl[0].Diffs[0].Prop != "position" {
+		t.Fatalf("expected a position lint diff, got %+v", byEl)
+	}
+	if byEl[0].Diffs[0].Advisory {
+		t.Error("position lint should be fixable, not advisory")
+	}
+}
+
+func TestTier1_AbsoluteEscapeHatchNotLinted(t *testing.T) {
+	// Figma itself declared this child ABSOLUTE (a legitimate escape hatch
+	// inside an auto-layout parent) — DOM position:absolute must not be
+	// flagged in that case.
+	want := map[string]figmaTarget{
+		"child": {typ: "FRAME", name: "Child", parentAutoLayout: true, layoutPositioning: "ABSOLUTE",
+			tokens: &Tokens{Fill: "#ffffff"}},
+	}
+	got := map[string]render.DOMElement{
+		"child": {FigmaNode: "child", Styles: map[string]string{
+			"background-color": "rgb(255, 255, 255)",
+			"position":         "absolute",
+		}},
+	}
+	if byEl, _ := tier1Diff(want, got); len(byEl) != 0 {
+		t.Errorf("declared escape hatch should not be linted, got %+v", byEl)
+	}
+}
+
+func TestTier1_AbsoluteOutsideAutoLayoutNotLinted(t *testing.T) {
+	// Not an auto-layout child at all (e.g. top-level or a non-flex parent)
+	// — position:absolute here is unremarkable, not a lint finding.
+	want := map[string]figmaTarget{
+		"child": {typ: "FRAME", name: "Child", tokens: &Tokens{Fill: "#ffffff"}},
+	}
+	got := map[string]render.DOMElement{
+		"child": {FigmaNode: "child", Styles: map[string]string{
+			"background-color": "rgb(255, 255, 255)",
+			"position":         "absolute",
+		}},
+	}
+	if byEl, _ := tier1Diff(want, got); len(byEl) != 0 {
+		t.Errorf("non-auto-layout child should not be linted, got %+v", byEl)
+	}
+}
+
+func TestTier1_ColorDiffCarriesVariableHint(t *testing.T) {
+	// When Figma's color is bound to a Variable, a color mismatch's "should"
+	// value carries the binding name as a hint — not a separate assertion,
+	// the match/no-match criterion is unchanged.
+	want := map[string]figmaTarget{
+		"btn": {typ: "FRAME", name: "Button", tokens: &Tokens{
+			Fill: "#18181b", FillVariable: "Colors/Text/Primary",
+		}},
+	}
+	got := map[string]render.DOMElement{
+		"btn": {FigmaNode: "btn", Styles: map[string]string{"background-color": "rgb(31, 41, 55)"}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 1 || len(byEl[0].Diffs) != 1 {
+		t.Fatalf("expected 1 color diff, got %+v", byEl)
+	}
+	should := byEl[0].Diffs[0].Should
+	if should != "#18181b (Figma Variable: Colors/Text/Primary)" {
+		t.Errorf("should = %q, want the hex plus the variable hint", should)
+	}
+}
+
+func TestTier1_ColorDiffNoHintWhenUnbound(t *testing.T) {
+	// No Variable bound → "should" is unchanged, no hint appended.
+	want := map[string]figmaTarget{
+		"btn": {typ: "FRAME", name: "Button", tokens: &Tokens{Fill: "#18181b"}},
+	}
+	got := map[string]render.DOMElement{
+		"btn": {FigmaNode: "btn", Styles: map[string]string{"background-color": "rgb(31, 41, 55)"}},
+	}
+	byEl, _ := tier1Diff(want, got)
+	if len(byEl) != 1 || byEl[0].Diffs[0].Should != "#18181b" {
+		t.Fatalf("expected plain hex should with no hint, got %+v", byEl)
+	}
+}
+
+func TestIssuesFromElements(t *testing.T) {
+	byElement := []ElementDiff{
+		{NodeID: "a", Name: "A", Diffs: []FieldDiff{
+			{Prop: "gap", Is: "16px", Should: "24px"},
+			{Prop: "width", Is: "100px", Should: "120px", Advisory: true},
+		}},
+		{NodeID: "b", Name: "B", Diffs: []FieldDiff{
+			{Prop: "color", Is: "red", Should: "blue"},
+		}},
+	}
+	issues := issuesFromElements(byElement, []string{"b"}) // "b" matched spatially, not by tag
+
+	if len(issues) != 3 {
+		t.Fatalf("expected 3 issues, got %d: %+v", len(issues), issues)
+	}
+	byProp := map[string]Issue{}
+	for _, i := range issues {
+		byProp[i.NodeID+"."+i.Property] = i
+	}
+
+	gap := byProp["a.gap"]
+	if gap.Severity != "major" || gap.Source != "structured" {
+		t.Errorf("gap issue = %+v, want major/structured", gap)
+	}
+	if gap.Confidence != 1.0 || gap.DOMSelector != `[data-figma-node="a"]` {
+		t.Errorf("tag-matched issue should have full confidence + a selector, got %+v", gap)
+	}
+
+	width := byProp["a.width"]
+	if width.Severity != "advisory" {
+		t.Errorf("advisory diff should map to advisory severity, got %+v", width)
+	}
+
+	color := byProp["b.color"]
+	if color.Confidence != 0.6 || color.DOMSelector != "" {
+		t.Errorf("spatially-aligned issue should have lower confidence + no selector, got %+v", color)
 	}
 }
 

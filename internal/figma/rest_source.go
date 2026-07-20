@@ -150,6 +150,17 @@ func (r *RESTSource) NodeWithDepth(ctx context.Context, fileKey, id string, dept
 	return &node, nil
 }
 
+// NodeWithOptions implements Source. RenderBounds is not supported over the
+// REST source — Figma's REST node payload doesn't carry
+// absoluteRenderBounds the way the live plugin bridge can, and reading it
+// would need real render access this backend doesn't have. Matches the
+// already-documented REST-vs-bridge parity gap (README's Limitations):
+// silently returns nodes with RenderBounds unset rather than erroring, same
+// as every other bridge-only field this source can't provide.
+func (r *RESTSource) NodeWithOptions(ctx context.Context, fileKey, id string, opts NodeOptions) (*Node, error) {
+	return r.NodeWithDepth(ctx, fileKey, id, opts.Depth)
+}
+
 // Selection implements Source. The Figma REST API has no concept of "what's
 // currently selected in the editor" — that's a live-session concept, not
 // data a static file snapshot carries. Returns an error rather than an

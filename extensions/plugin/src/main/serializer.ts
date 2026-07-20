@@ -144,6 +144,12 @@ export type SerializedNode = {
   name: string;
   type: string;
   bounds?: NodeBounds;
+  // Post-effects, post-transform render bounds (Figma's
+  // absoluteRenderBounds), in absolute page coordinates — only present when
+  // a caller opts in (reading it forces Figma to render the node). Used to
+  // geo-diff transform-composition errors: bounds/rotation can match while
+  // the actual rendered box is off (e.g. a wrong transform-origin).
+  renderBounds?: NodeBounds;
   characters?: string;
   styles?: SerializedStyles;
   children?: SerializedNode[];
@@ -504,6 +510,17 @@ function nodeBounds(node: SceneNode): NodeBounds | undefined {
     return undefined;
   }
   return { x: node.x, y: node.y, width: node.width, height: node.height };
+}
+
+// nodeRenderBounds reads node.absoluteRenderBounds — the post-effects,
+// post-transform box Figma actually rendered, as opposed to nodeBounds()'s
+// declared/pre-effects box. Only call this when the caller opted in
+// (includeRenderBounds): the Plugin API forces a render to compute it.
+function nodeRenderBounds(node: SceneNode): NodeBounds | undefined {
+  if (!("absoluteRenderBounds" in node)) return undefined;
+  const b = node.absoluteRenderBounds;
+  if (!b) return undefined;
+  return { x: b.x, y: b.y, width: b.width, height: b.height };
 }
 
 async function withTextFields(node: TextNode | TextPathNode, base: SerializedNode) {
@@ -1048,13 +1065,15 @@ function leanBase(node: SceneNode): SerializedNode {
 async function fullBase(
   node: SceneNode,
   cache: VariableCache,
-  pool?: ConcurrencyPool
+  pool?: ConcurrencyPool,
+  includeRenderBounds = false
 ): Promise<SerializedNode> {
   return {
     id: node.id,
     name: node.name,
     type: node.type,
     bounds: nodeBounds(node),
+    renderBounds: includeRenderBounds ? nodeRenderBounds(node) : undefined,
     styles: await baseStylesFor(node, cache, pool),
     componentProps: resolveComponentProps(node),
     variantModes: await resolveVariantModes(node, cache, pool),
@@ -1071,9 +1090,10 @@ async function serializeNodeShallow(
   node: SceneNode,
   cache: VariableCache,
   lean: boolean,
-  pool?: ConcurrencyPool
+  pool?: ConcurrencyPool,
+  includeRenderBounds = false
 ): Promise<SerializedNode> {
-  const base = lean ? leanBase(node) : await fullBase(node, cache, pool);
+  const base = lean ? leanBase(node) : await fullBase(node, cache, pool, includeRenderBounds);
   if (node.type === "TEXT" && !lean) return withTextFields(node, base);
   if (node.type === "TEXT_PATH" && !lean) {
     return withTextPathFields(node, await withTextFields(node, base));
@@ -1130,7 +1150,8 @@ export function serializeNode(
   depth?: number,
   cache?: VariableCache,
   lean?: boolean,
-  pool?: ConcurrencyPool
+  pool?: ConcurrencyPool,
+  includeRenderBounds?: boolean
 ): Promise<SerializedNode>;
 export function serializeNode(
   node: SceneNode,
@@ -1139,6 +1160,7 @@ export function serializeNode(
   cache: VariableCache,
   lean: boolean,
   pool: ConcurrencyPool,
+  includeRenderBounds: boolean,
   stream: StreamSink
 ): Promise<undefined>;
 export async function serializeNode(
@@ -1155,9 +1177,13 @@ export async function serializeNode(
   lean = false,
   // Shared for one whole-tree walk, same as cache — see ConcurrencyPool above.
   pool: ConcurrencyPool = createConcurrencyPool(),
+  // Forces a render per node to read absoluteRenderBounds (see
+  // nodeRenderBounds) — opt-in only, propagates to every descendant this
+  // call recurses into, same as lean/cache/pool.
+  includeRenderBounds = false,
   stream?: StreamSink
 ): Promise<SerializedNode | undefined> {
-  const base = await serializeNodeShallow(node, cache, lean, pool);
+  const base = await serializeNodeShallow(node, cache, lean, pool, includeRenderBounds);
 
   if (!("children" in node)) {
     stream?.emit(stream.path, base);
@@ -1186,7 +1212,7 @@ export async function serializeNode(
     await Promise.all(
       visibleChildren.map((child, i) =>
         pool.run(() =>
-          serializeNode(child, maxDepth, depth + 1, cache, lean, pool, {
+          serializeNode(child, maxDepth, depth + 1, cache, lean, pool, includeRenderBounds, {
             emit: stream.emit,
             path: [...stream.path, i],
           })
@@ -1198,7 +1224,7 @@ export async function serializeNode(
 
   const children = await Promise.all(
     visibleChildren.map((child) =>
-      pool.run(() => serializeNode(child, maxDepth, depth + 1, cache, lean, pool))
+      pool.run(() => serializeNode(child, maxDepth, depth + 1, cache, lean, pool, includeRenderBounds))
     )
   );
   const result = { ...base, children };

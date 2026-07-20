@@ -14,6 +14,22 @@ type Bounds struct {
 	Height float64 `json:"height"`
 }
 
+// NodeOptions controls what optional, non-default-cheap fields a node fetch
+// includes — see NodeWithOptions. Zero value is the cheapest possible fetch
+// (matches plain Node/NodeWithDepth exactly).
+type NodeOptions struct {
+	// Depth caps recursion (0 = unlimited) — same meaning as NodeWithDepth.
+	Depth int
+	// RenderBounds requests each node's post-effects, post-transform render
+	// bounds (Figma's absoluteRenderBounds) alongside the usual declared
+	// Bounds. Reading it forces Figma to render the node, so it costs more
+	// — opt-in only. Used to geo-diff transform-composition errors (see
+	// service.Reconcile's geoDiff option): a rotated/skewed element's
+	// declared values can match while the actual rendered box is off,
+	// e.g. a wrong transform-origin.
+	RenderBounds bool
+}
+
 // Node is the source-independent representation of a Figma node. It carries
 // only the fields figma-map needs; richer per-backend data is intentionally
 // dropped at the boundary so downstream code stays backend-agnostic.
@@ -23,7 +39,13 @@ type Node struct {
 	Type       string `json:"type"`
 	Characters string `json:"characters,omitempty"`
 	Bounds     Bounds `json:"bounds"`
-	Styles     *Style `json:"styles,omitempty"`
+	// RenderBounds is the node's post-effects, post-transform render bounds
+	// (Figma's absoluteRenderBounds), in absolute page coordinates — only
+	// present when fetched via NodeOptions.RenderBounds. nil, not zero-value,
+	// means "not requested/unavailable", so callers can tell "no geo-diff
+	// data" apart from "a genuinely zero-sized box".
+	RenderBounds *Bounds `json:"renderBounds,omitempty"`
+	Styles       *Style  `json:"styles,omitempty"`
 	Children   []Node `json:"children,omitempty"`
 	// ChildCount is set instead of Children when a depth-limited fetch (see
 	// NodeWithDepth) truncates below this node — an honest "N more children
@@ -119,6 +141,11 @@ type Reaction struct {
 type File struct {
 	FileKey  string `json:"fileKey"`
 	FileName string `json:"fileName"`
+	// Status is "connected", "dormant" (a request is going without real
+	// progress — usually Figma throttling a backgrounded window, not an
+	// error), or "" on a backend that predates this field (REST source
+	// never sets it either — REST has no live connection to be dormant).
+	Status string `json:"status,omitempty"`
 }
 
 // Page is one top-level page in a Figma file.
@@ -211,6 +238,12 @@ type Source interface {
 	// `find --within`), so the source doesn't walk/serialize work that would
 	// just be discarded.
 	NodeWithDepth(ctx context.Context, fileKey, id string, depth int) (*Node, error)
+	// NodeWithOptions returns a single node by id with fine-grained control
+	// over what gets fetched (see NodeOptions) — Node/NodeWithDepth are
+	// convenience wrappers over the common cases and stay in this interface
+	// unchanged; reach for this one when a caller needs more than depth
+	// (e.g. RenderBounds, for geo-diffing transform-composition errors).
+	NodeWithOptions(ctx context.Context, fileKey, id string, opts NodeOptions) (*Node, error)
 	// Selection returns the nodes currently selected in the editor.
 	Selection(ctx context.Context, fileKey string) ([]Node, error)
 	// Screenshot renders a node to image bytes.

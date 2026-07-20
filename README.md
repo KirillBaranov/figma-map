@@ -320,16 +320,39 @@ Other common issues:
 
 ## Roadmap
 
-Where this is headed next, in rough priority order:
+Where this is headed next, in rough priority order. See
+[CHANGELOG.md](CHANGELOG.md) for the verify-cascade work already shipped
+(unified issue-list, structure lint, attributed pixeldiff, node-matching
+anchors, geo-diff, dormant status, streaming/caching) — the items below are
+what's left of each, not a restatement.
 
+- [ ] **Structure lint: hug/fill sizing.** The `position:absolute` and
+  Figma-Variable-hint checks shipped; hardcoded width/height vs. Figma's
+  hug/fill sizing mode didn't — no sizing-mode field exists anywhere in the
+  wire shape yet, needs the same plugin→backend→Go plumbing as geo-diff did.
+- [ ] **Node-matching: tree-order/ancestor signal.** Accessible-text and
+  component/class-name tie-break anchors shipped; the doc's "repeating
+  cards/menu items" weakness (matching by sibling/tree order, not just
+  per-node IoU) is still open — needs real fixture validation against
+  repeated-sibling layouts before shipping, not a quick addition.
+- [ ] **A true ambient plugin liveness probe.** Today's dormant/connected
+  status is inferred from an in-flight request's stall pattern, not a
+  standing heartbeat independent of one — accurate but reactive; a plugin
+  -side interval ping (if Figma's execution model allows one while
+  backgrounded — unverified) would make it proactive.
+- [ ] **Persisted job queue with TTL, not just fast-reconnect resume.**
+  In-flight requests now survive a *quick* plugin reconnect; a full
+  persisted job protocol (survives a backend restart, lets a reconnecting
+  plugin ask "what's still wanted" instead of the backend having to already
+  know) is the fuller version the strategy doc describes.
+- [ ] **Per-node dirty-set caching, not a whole-cache clear.** `get_node`
+  now caches between calls and invalidates on any Figma edit — correct, but
+  coarse (any edit anywhere clears everything). A precise per-node dirty-set
+  would keep unrelated cache entries warm across an edit.
 - [ ] **Deeper agent ↔ issue integration** — claim an issue, report progress
   on it, close the loop without re-explaining context already captured.
 - [ ] **Arbitrary-region diff selection** — drag-select any region of the
   page, not just a single node, as the unit of comparison.
-- [ ] **Diff-to-fix, not just diff-to-look-at** — show the agent the actual
-  visual diff for a flagged issue, not only the Figma-side tokens.
-- [ ] **Large-document performance** — a full-styles walk over a very large
-  node count is still genuinely slow; `--depth` is today's workaround.
 - [ ] **One-click plugin/extension install** — publish to the Figma
   Community and the Chrome Web Store, so "load unpacked" stops being a step.
 - [ ] **Wider `reconcile` coverage** — margins, box-shadow, and gradient
@@ -341,7 +364,9 @@ Where this is headed next, in rough priority order:
   prototyping reactions, dev-resources, annotations).
 
 See [docs/limitations.md](docs/limitations.md) for the full, current list of
-gaps — and [CHANGELOG.md](CHANGELOG.md) for what's already shipped.
+gaps, [docs/design/verification-loop-strategy.md](docs/design/verification-loop-strategy.md)
+for the verify-cascade reasoning, and [CHANGELOG.md](CHANGELOG.md) for what's
+already shipped.
 
 ## Documentation
 

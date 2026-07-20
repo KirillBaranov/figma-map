@@ -42,6 +42,11 @@ export interface BridgeResponse {
 export interface ConnectedFile {
   fileKey: string;
   fileName: string;
+  // "dormant" means a request against this file is going without real
+  // progress — usually Figma itself throttling a backgrounded window, an
+  // honest "reopen the tab" signal, not an error. Inferred from recent
+  // request behavior, not a standing ambient probe (see bridge.ts).
+  status?: "connected" | "dormant";
 }
 
 export enum Role {

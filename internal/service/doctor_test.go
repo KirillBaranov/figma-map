@@ -45,3 +45,21 @@ func TestDoctor_PluginConnected(t *testing.T) {
 		t.Error("plugin-connected check should pass once a file is connected")
 	}
 }
+
+// TestDoctor_DormantIsNotAFailure covers Phase F: a dormant file (Figma tab
+// backgrounded/throttled — requests going without real progress) is an
+// honest heads-up, not an error — the check must still pass, just with an
+// informational Detail an agent can read before a request stalls on it.
+func TestDoctor_DormantIsNotAFailure(t *testing.T) {
+	fake := &fakeSource{files: []figma.File{{FileKey: "k", FileName: "F", Status: "dormant"}}}
+	s := &Service{cfg: config.Config{}, src: fake}
+	r := s.Doctor(context.Background())
+
+	check := findCheck(t, r, "figma plugin connected")
+	if !check.OK {
+		t.Errorf("dormant should not fail the check, got %+v", check)
+	}
+	if check.Detail == "" {
+		t.Error("dormant should still surface an informational detail")
+	}
+}

@@ -97,7 +97,7 @@ func TestCollectTargets(t *testing.T) {
 			{ID: "plain", Type: "FRAME"}, // no styles → not a target
 		}}
 	out := map[string]figmaTarget{}
-	collectTargets(frame, 0, 0, true, out)
+	collectTargets(frame, 0, 0, true, false, 0, 0, out)
 	if _, ok := out["f"]; !ok {
 		t.Error("frame with fill should be a target")
 	}

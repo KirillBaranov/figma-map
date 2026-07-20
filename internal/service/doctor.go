@@ -27,11 +27,15 @@ type Report struct {
 // deterministic and never requires the key to be present (it only reports it).
 func (s *Service) Doctor(ctx context.Context) Report {
 	r := Report{OK: true}
-	add := func(name string, err error) {
+	add := func(name string, err error, info ...string) {
 		c := Check{Name: name, OK: err == nil}
 		if err != nil {
 			c.Detail = err.Error()
 			r.OK = false
+		} else if len(info) > 0 && info[0] != "" {
+			// Non-failing informational detail (e.g. dormant) — the check
+			// still passes, an agent just gets the honest heads-up.
+			c.Detail = info[0]
 		}
 		r.Checks = append(r.Checks, c)
 	}
@@ -42,7 +46,8 @@ func (s *Service) Doctor(ctx context.Context) Report {
 	// down" and "bridge up but no plugin connected" are distinguishable.
 	bridgeErr := s.src.Ping(ctx)
 	add(fmt.Sprintf("figma bridge (%s)", s.cfg.Bridge), bridgeErr)
-	add("figma plugin connected", pluginConnected(ctx, s, bridgeErr))
+	connErr, connInfo := pluginConnected(ctx, s, bridgeErr)
+	add("figma plugin connected", connErr, connInfo)
 	add("headless chrome", findChrome())
 	add(fmt.Sprintf("storybook (%s)", s.cfg.Storybook), pingStorybook(s.cfg.Storybook))
 
@@ -58,19 +63,32 @@ func (s *Service) Doctor(ctx context.Context) Report {
 // the (already-reachable) bridge — the bridge process can be up with zero
 // files connected, which otherwise looks identical to "bridge down" to an
 // agent reading just the Ping check.
-func pluginConnected(ctx context.Context, s *Service, bridgeErr error) error {
+// pluginConnected's second return value is an informational (non-failing)
+// detail — set when a connected file looks dormant (requests going without
+// real progress, usually Figma throttling a backgrounded window). Dormant
+// is an honest status, not an error (see figma.File.Status): the check
+// still passes, the agent just gets the heads-up before a request stalls
+// on it, instead of only finding out via a timeout mid-request.
+func pluginConnected(ctx context.Context, s *Service, bridgeErr error) (error, string) {
 	if bridgeErr != nil {
-		return fmt.Errorf("bridge unreachable — restart it: figma-map bridge up")
+		return fmt.Errorf("bridge unreachable — restart it: figma-map bridge up"), ""
 	}
 	files, err := s.src.Files(ctx)
 	if err != nil {
-		return err
+		return err, ""
 	}
 	if len(files) == 0 {
 		return fmt.Errorf("bridge is up but no Figma file is connected — open the file " +
-			"and run the plugin in Figma (Plugins → Development)")
+			"and run the plugin in Figma (Plugins → Development)"), ""
 	}
-	return nil
+	for _, f := range files {
+		if f.Status == "dormant" {
+			return nil, fmt.Sprintf(
+				"%q looks dormant (Figma tab backgrounded/throttled?) — requests may stall; bring it to the foreground",
+				f.FileName)
+		}
+	}
+	return nil, ""
 }
 
 // findChrome locates a Chrome/Chromium binary the way chromedp does.

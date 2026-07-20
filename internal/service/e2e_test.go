@@ -71,7 +71,7 @@ func TestE2E_RenderAlignDiff(t *testing.T) {
 
 	// Matching design → no diffs.
 	want := map[string]figmaTarget{}
-	collectTargets(e2eFrame(700), 0, 0, true, want)
+	collectTargets(e2eFrame(700), 0, 0, true, false, 0, 0, want)
 	got, _ := alignElements(want, els)
 	if byEl, _ := tier1Diff(want, got); len(byEl) != 0 {
 		t.Errorf("faithful render should match, got %+v", byEl)
@@ -79,7 +79,7 @@ func TestE2E_RenderAlignDiff(t *testing.T) {
 
 	// Design wants font-weight 400 → a real, exact diff is reported.
 	want2 := map[string]figmaTarget{}
-	collectTargets(e2eFrame(400), 0, 0, true, want2)
+	collectTargets(e2eFrame(400), 0, 0, true, false, 0, 0, want2)
 	got2, _ := alignElements(want2, els)
 	byEl, _ := tier1Diff(want2, got2)
 	if len(byEl) != 1 || byEl[0].NodeID != "2" || byEl[0].Diffs[0].Prop != "font-weight" {

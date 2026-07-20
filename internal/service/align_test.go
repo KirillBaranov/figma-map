@@ -76,6 +76,53 @@ func TestAlign_TextBreaksTie(t *testing.T) {
 	}
 }
 
+func TestAlign_AccessibleTextBreaksTieForNonTextNode(t *testing.T) {
+	// A text-less Figma instance ("Icon/Search") has no own text to anchor
+	// on, but the correct DOM element carries a matching aria-label — this
+	// anchor must apply to non-TEXT node types too (Phase D: previously only
+	// TEXT nodes got the textOverlap bonus).
+	want := map[string]figmaTarget{
+		"icon": {typ: "INSTANCE", name: "Icon/Search", box: figma.Bounds{X: 0, Y: 0, Width: 24, Height: 24}},
+	}
+	els := []render.DOMElement{
+		{Tag: "svg", AccessibleText: "Close", Box: render.Box{X: 0, Y: 0, Width: 24, Height: 24}},
+		{Tag: "svg", AccessibleText: "Search", Box: render.Box{X: 0, Y: 0, Width: 24, Height: 24}},
+	}
+	matched, _ := alignElements(want, els)
+	if matched["icon"].AccessibleText != "Search" {
+		t.Errorf("aria-label should break the tie, got %q", matched["icon"].AccessibleText)
+	}
+}
+
+func TestAlign_ClassNameBreaksTie(t *testing.T) {
+	// No accessible text either, but the DOM class echoes the component name.
+	want := map[string]figmaTarget{
+		"btn": {typ: "INSTANCE", name: "Button/Primary", box: figma.Bounds{X: 0, Y: 0, Width: 100, Height: 40}},
+	}
+	els := []render.DOMElement{
+		{Tag: "button", Class: "button-secondary", Box: render.Box{X: 0, Y: 0, Width: 100, Height: 40}},
+		{Tag: "button", Class: "button-primary", Box: render.Box{X: 0, Y: 0, Width: 100, Height: 40}},
+	}
+	matched, _ := alignElements(want, els)
+	if matched["btn"].Class != "button-primary" {
+		t.Errorf("class should break the tie, got %q", matched["btn"].Class)
+	}
+}
+
+func TestNormalizeAnchorName(t *testing.T) {
+	cases := map[string]string{
+		"Icon/Search":       "icon search",
+		"button--primary":   "button primary",
+		"  Card_Item.large": "card item large",
+		"":                  "",
+	}
+	for in, want := range cases {
+		if got := normalizeAnchorName(in); got != want {
+			t.Errorf("normalizeAnchorName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAlign_NoMatchBelowThreshold(t *testing.T) {
 	want := map[string]figmaTarget{
 		"x": {typ: "FRAME", box: figma.Bounds{X: 0, Y: 0, Width: 10, Height: 10}},

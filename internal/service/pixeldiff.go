@@ -56,6 +56,15 @@ type PixelDiffResult struct {
 	// first — a textual "where to look" signal, no image interpretation
 	// needed. Empty when GridSize<=0.
 	Regions []DiffRegion `json:"regions,omitempty"`
+	// Clusters are real connected-component diff regions, classified by
+	// likely cause (attributed pixeldiff — see render.Cluster). Only
+	// populated when PixelDiffOptions.Cluster is set. Additive alongside
+	// Regions, not a replacement.
+	Clusters []Cluster `json:"clusters,omitempty"`
+	// Issues mirrors Clusters into the cascade's unified issue-list shape
+	// (see issue.go) — same additive relationship Reconcile's Diff.Issues
+	// has to ByElement.
+	Issues []Issue `json:"issues,omitempty"`
 }
 
 // DiffRegion is one fixed-grid cell's diff percentage.
@@ -65,6 +74,20 @@ type DiffRegion struct {
 	W       int     `json:"w"`
 	H       int     `json:"h"`
 	DiffPct float64 `json:"diffPct"`
+}
+
+// Cluster is one connected-component diff region, classified by likely
+// cause — see render.Cluster for the algorithm.
+type Cluster struct {
+	X          int `json:"x"`
+	Y          int `json:"y"`
+	W          int `json:"w"`
+	H          int `json:"h"`
+	DiffPixels int `json:"diffPixels"`
+	// Kind is "shift", "color", or "other" — see render.Cluster.
+	Kind    string `json:"kind"`
+	OffsetX int    `json:"offsetX,omitempty"`
+	OffsetY int    `json:"offsetY,omitempty"`
 }
 
 // PixelDiffOptions controls the comparison.
@@ -80,6 +103,9 @@ type PixelDiffOptions struct {
 	// GridSize buckets the comparison into a GridSize×GridSize grid for
 	// Regions. Default 4; pass a negative value to disable region computation.
 	GridSize int
+	// Cluster additionally computes connected-component Clusters/Issues
+	// (attributed pixeldiff) — costs more than the grid alone, so opt-in.
+	Cluster bool
 	// Selector scopes the implementation-side screenshot to one element
 	// instead of the whole viewport/page — a CSS selector, or a bare Figma
 	// node id (expanded to `[data-figma-node="<id>"]`). Lets the agent diff
@@ -179,7 +205,7 @@ func (s *Service) PixelDiff(ctx context.Context, fileKey, nodeID, url string, op
 
 	// 4. Pixel diff.
 	produceDiff := opts.DiffOut != ""
-	diff, err := render.PixelDiff(figmaPNG, browserPNG, opts.ColorTol, produceDiff, opts.GridSize)
+	diff, err := render.PixelDiff(figmaPNG, browserPNG, opts.ColorTol, produceDiff, opts.GridSize, opts.Cluster)
 	if err != nil {
 		return PixelDiffResult{}, fmt.Errorf("pixel diff: %w", err)
 	}
@@ -197,6 +223,13 @@ func (s *Service) PixelDiff(ctx context.Context, fileKey, nodeID, url string, op
 			DiffPct: math.Round(r.DiffPct*100) / 100,
 		})
 	}
+	for _, c := range diff.Clusters {
+		result.Clusters = append(result.Clusters, Cluster{
+			X: c.X, Y: c.Y, W: c.W, H: c.H,
+			DiffPixels: c.DiffPixels, Kind: c.Kind, OffsetX: c.OffsetX, OffsetY: c.OffsetY,
+		})
+	}
+	result.Issues = IssuesFromClusters(result.Clusters)
 
 	if produceDiff && len(diff.DiffImage) > 0 {
 		if err := os.WriteFile(opts.DiffOut, diff.DiffImage, 0o644); err != nil {

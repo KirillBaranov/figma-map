@@ -6,6 +6,95 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`verify_reconcile --geoDiff` for transform-composition errors.** For
+  CSS-transformed elements (rotate/scale/skew), reconcile previously just
+  skipped the box check entirely (declared bounds are pre-transform, DOM
+  `getBoundingClientRect()` is post-transform — comparing them directly is
+  always a false diff). With `--geoDiff`, it instead compares Figma's own
+  post-effects render bounds (`absoluteRenderBounds`, opt-in — reading it
+  forces a render, so it's not fetched by default) against the DOM's
+  post-transform box, reporting `render-x`/`render-y`/`render-width`/
+  `render-height` diffs. Localizes the "declared values match, but it still
+  renders wrong" class of bug (e.g. a rotate applied around the wrong
+  transform-origin) that was previously invisible to this tool.
+- **Figma plugin connection status: `connected` / `dormant`.** `doctor` (and
+  any tool reading `figma.File`) now reports when a connected file looks
+  dormant — a request going without real progress for 15s, almost always
+  Figma throttling a backgrounded/unfocused window, not an error. Surfaced
+  as an honest heads-up (the check still passes) instead of only finding out
+  via an eventual request timeout.
+- **`get_node` no longer builds huge subtrees in one giant in-memory blob.**
+  Now routes through the same chunked-streaming path `get_document`/
+  `get_selection` already used, so a large `--depth`-unlimited fetch doesn't
+  risk the single-postMessage stall those two were fixed for earlier.
+- **In-flight requests survive a fast plugin reconnect.** Previously any
+  request in flight when the plugin's WebSocket dropped was immediately
+  failed, even if a new connection for the same file had already taken its
+  place (e.g. a quick Figma-side reload). Now resumes on the new connection
+  instead — the original caller's request keeps waiting rather than
+  surfacing a reconnect as an error.
+- **`get_node` caches small-subtree results between calls, invalidated on
+  any Figma document edit.** A verify-loop that re-fetches the same node
+  across iterations without the design changing hits cache instead of
+  re-walking/re-serializing. Coarse-grained on purpose (whole-cache clear on
+  any `documentchange`, not a precise per-node dirty-set) — correct either
+  way, simpler, and a smaller/lower-risk change. Large subtrees (already
+  routed through streaming, above) aren't cached — caching them would mean
+  holding the whole thing in memory anyway, undoing what streaming avoids.
+- **`verify_reconcile` reports a unified `issues` list.** Additive alongside
+  the existing `byElement`/`spatiallyAligned`/`unmeasured` shapes (nothing
+  removed, nothing renamed): each `Issue` normalizes a per-property diff
+  into one cross-source shape (`nodeId`, `domSelector`, `property`,
+  `expected`, `actual`, `severity`, `confidence`, `source`) — the
+  foundation the rest of the verification cascade (attributed pixeldiff,
+  the VLM tier) will report through going forward.
+- **Structure lint: unexplained `position: absolute` inside a Figma
+  auto-layout parent.** Flagged as a fixable diff independent of whether
+  pixels or tokens otherwise match — the classic case where an
+  implementation opts a flex child out of flow on its own, which pixeldiff
+  alone can't see if the two renders still happen to line up.
+- **Color diffs carry a Figma Variable hint.** When a mismatched color is
+  bound to a Figma Variable, the `should` value now names it (e.g. "#1c1d21
+  (Figma Variable: Semantic/text/primary)") — a hint that a token exists to
+  reach for, not an assertion about the implementation (DOM computed styles
+  can't tell literal-authored from token-authored either way).
+- **Node matching anchors on accessible text and component/class names, not
+  just TEXT content.** `alignElements`'s spatial fallback previously only
+  got a text-match bonus for TEXT-typed Figma nodes; text-less nodes
+  (icons, instances) now also get a tie-break bonus when the Figma layer's
+  name matches a DOM element's `aria-label`/`alt`/`title` or `class` —
+  `render.DOMElement` now captures those too.
+- **`verify_pixeldiff`/`verify_pixeldiff-images --cluster` for attributed
+  pixeldiff.** Opt-in: groups the diff mask into real connected-component
+  regions (not fixed grid cells) and classifies each as a `shift` (with the
+  px offset that explains it, found via a bounded cross-correlation search),
+  a `color`-only difference, or unclassified — reported as both `Clusters`
+  and `Issues` (`source: "pixel"`). Includes induced-diff subtraction: a
+  region fully explained by the same offset as a larger shift nearby is
+  absorbed rather than reported as its own defect, so one real shift doesn't
+  cascade into several noisy regions below it.
+- **Tier-2 semantic check can scope to crops instead of the whole frame.**
+  `reconcile --semantic` now sends the vision LLM only the regions Tier-1
+  couldn't resolve (actionable-unmeasured nodes, spatially-aligned
+  lower-confidence matches) — one call per region, capped at 5 — instead of
+  always the whole frame in one shot. Falls back to the original whole-frame
+  behavior automatically when everything was cleanly tag-matched.
+
+### Fixed
+
+- **`verify_*` (and every other) MCP tool no longer drops its human-readable
+  report.** The CLI has always printed a narrative for `reconcile`/
+  `pixeldiff` results ("✗ 3 fixable difference(s)", "Fix these:", per-property
+  is/should diffs, worst-region breakdowns) via each op's `Render` func, but
+  `AddMCP` never called it — an MCP-calling agent got only the raw JSON
+  (`StructuredContent`), the "here's a number, figure it out" experience.
+  `AddMCP` now includes the same narrative as `TextContent` alongside the
+  unchanged structured JSON, and MCP tool descriptions fold in each op's
+  `Long` help text (previously CLI-only), so agents see the same guidance
+  `--help` already gave humans.
+
 ## [0.11.1] - 2026-07-17
 
 ### Fixed

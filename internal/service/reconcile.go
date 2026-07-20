@@ -69,6 +69,10 @@ type Diff struct {
 	SpatiallyAligned []string          `json:"spatiallyAligned,omitempty"`
 	Unmeasured       []UnmeasuredNode  `json:"unmeasured,omitempty"`
 	Semantic         []SemanticFinding `json:"semantic,omitempty"`
+	// Issues is ByElement flattened into the cascade's unified, cross-source
+	// shape (see issue.go) — additive alongside ByElement, not a replacement;
+	// existing CLI/MCP consumers keep working off ByElement unchanged.
+	Issues []Issue `json:"issues,omitempty"`
 }
 
 // tolerances for deterministic comparison (sub-pixel/font metrics make exact
@@ -85,18 +89,35 @@ type figmaTarget struct {
 	name   string
 	text   string
 	box    figma.Bounds // absolute within the frame (origin 0,0)
+	// layoutPositioning mirrors Figma's own auto-layout escape hatch
+	// (figma.Style.LayoutPositioning, "ABSOLUTE" or ""). parentAutoLayout is
+	// true when this node's own parent uses auto-layout. Together they say
+	// whether a DOM `position: absolute` on this node is legitimate (Figma
+	// declared it as an escape hatch) or a structure-lint violation (the
+	// design never asked for it) — see the "position" check in compareNode.
+	layoutPositioning string
+	parentAutoLayout  bool
+	// renderBounds is this node's post-effects, post-transform render bounds
+	// (Figma's absoluteRenderBounds), converted to frame-relative space —
+	// nil unless the caller opted into geoDiff (see Reconcile). Compared
+	// against the DOM's post-transform getBoundingClientRect() in
+	// compareNode when the element is CSS-transformed, instead of just
+	// skipping the box check as today's declared-Bounds comparison must.
+	renderBounds *figma.Bounds
 }
 
 // Reconcile compares a Figma node against the agent's rendered output. story or
 // url drive the deterministic Tier 1 (DOM computed styles vs Figma tokens);
 // imagePath falls back to Tier 2 only (no DOM). semantic enables the Tier-2 LLM
 // check (requires an API key).
-func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, imagePath string, semantic bool) (Diff, error) {
+func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, imagePath string, semantic, geoDiff bool) (Diff, error) {
 	key, err := s.resolveFileKey(ctx, fileKey)
 	if err != nil {
 		return Diff{}, err
 	}
-	frame, err := s.src.Node(ctx, key, nodeID)
+	// RenderBounds forces a Figma render per node, so only request it when
+	// geoDiff is opted in (see figma.NodeOptions).
+	frame, err := s.src.NodeWithOptions(ctx, key, nodeID, figma.NodeOptions{RenderBounds: geoDiff})
 	if err != nil {
 		return Diff{}, err
 	}
@@ -120,8 +141,18 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 		return Diff{}, err
 	}
 
+	// The frame's own renderBounds origin: absoluteRenderBounds is in
+	// absolute page coordinates, but figmaTarget.box (and the DOM) are
+	// frame-relative — subtracting this converts each descendant's render
+	// bounds into the same frame-relative space, the same way collectTargets
+	// already does for the regular declared Bounds.
+	var frameRenderOriginX, frameRenderOriginY float64
+	if frame.RenderBounds != nil {
+		frameRenderOriginX, frameRenderOriginY = frame.RenderBounds.X, frame.RenderBounds.Y
+	}
+
 	want := map[string]figmaTarget{}
-	collectTargets(frame, 0, 0, true, want)
+	collectTargets(frame, 0, 0, true, false, frameRenderOriginX, frameRenderOriginY, want)
 
 	// Align design nodes to DOM elements: exact by data-figma-node where present,
 	// otherwise by geometry/type/text (for existing, untagged implementations).
@@ -147,10 +178,12 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 		ByElement:        byElement,
 		Unmeasured:       unmeasured,
 		SpatiallyAligned: spatial,
+		Issues:           issuesFromElements(byElement, spatial),
 	}
 
 	if semantic {
-		findings, err := s.tier2(ctx, key, frame, renderURL, width)
+		crops := semanticCrops(want, unmeasured, spatial)
+		findings, err := s.tier2(ctx, key, frame, renderURL, width, crops)
 		if err == nil {
 			diff.Semantic = findings
 			if hasMajor(findings) {
@@ -161,10 +194,50 @@ func (s *Service) Reconcile(ctx context.Context, fileKey, nodeID, story, url, im
 	return diff, nil
 }
 
+// semanticCrops builds Tier-2 crop regions from what Tier-1 couldn't fully
+// resolve: actionable-unmeasured nodes (may be genuinely missing from the
+// render — exactly what the VLM's "missing/extra" check looks for) and
+// spatially-aligned matches (lower-confidence — worth a second look).
+// Returns nil when everything was cleanly tag-matched, so tier2 falls back
+// to its original whole-frame behavior in the common, confident case.
+func semanticCrops(want map[string]figmaTarget, unmeasured []UnmeasuredNode, spatial []string) []CropRegion {
+	var crops []CropRegion
+	seen := map[string]bool{}
+	add := func(id string) {
+		if seen[id] {
+			return
+		}
+		ft, ok := want[id]
+		if !ok || ft.box.Width <= 0 || ft.box.Height <= 0 {
+			return
+		}
+		seen[id] = true
+		crops = append(crops, CropRegion{
+			X: int(ft.box.X), Y: int(ft.box.Y), W: int(ft.box.Width), H: int(ft.box.Height),
+		})
+	}
+	for _, u := range unmeasured {
+		if u.Actionable {
+			add(u.NodeID)
+		}
+	}
+	for _, id := range spatial {
+		add(id)
+	}
+	return crops
+}
+
 // collectTargets walks the frame and records every node that carries tokens,
 // accumulating each node's absolute position within the frame (the bridge
 // reports parent-relative bounds). originX/Y is the parent's absolute origin.
-func collectTargets(n *figma.Node, originX, originY float64, root bool, out map[string]figmaTarget) {
+// parentAutoLayout says whether n's own parent uses auto-layout (needed for
+// the position:absolute structure-lint check — see figmaTarget).
+// frameRenderOriginX/Y is the frame's own absoluteRenderBounds origin (0,0
+// when geoDiff wasn't requested, in which case every renderBounds below
+// stays nil anyway since n.RenderBounds itself wasn't fetched) — subtracted
+// from each node's absolute render bounds to land in the same frame-relative
+// space as box.
+func collectTargets(n *figma.Node, originX, originY float64, root bool, parentAutoLayout bool, frameRenderOriginX, frameRenderOriginY float64, out map[string]figmaTarget) {
 	absX, absY := originX+n.Bounds.X, originY+n.Bounds.Y
 	if root {
 		absX, absY = 0, 0 // frame is the coordinate origin
@@ -172,12 +245,38 @@ func collectTargets(n *figma.Node, originX, originY float64, root bool, out map[
 	if t := tokensFromStyle(n.Styles); t != nil {
 		out[n.ID] = figmaTarget{
 			tokens: t, typ: n.Type, name: n.Name, text: n.Characters,
-			box: figma.Bounds{X: absX, Y: absY, Width: n.Bounds.Width, Height: n.Bounds.Height},
+			box:               figma.Bounds{X: absX, Y: absY, Width: n.Bounds.Width, Height: n.Bounds.Height},
+			layoutPositioning: styleLayoutPositioning(n.Styles),
+			parentAutoLayout:  parentAutoLayout,
+			renderBounds:      relativeRenderBounds(n.RenderBounds, frameRenderOriginX, frameRenderOriginY),
 		}
 	}
+	childAutoLayout := n.Styles != nil && n.Styles.AutoLayout != nil
 	for i := range n.Children {
-		collectTargets(&n.Children[i], absX, absY, false, out)
+		collectTargets(&n.Children[i], absX, absY, false, childAutoLayout, frameRenderOriginX, frameRenderOriginY, out)
 	}
+}
+
+// relativeRenderBounds converts a node's absolute-page-coordinate render
+// bounds into frame-relative space, or returns nil when render bounds
+// weren't fetched for this node (geoDiff not requested).
+func relativeRenderBounds(abs *figma.Bounds, frameOriginX, frameOriginY float64) *figma.Bounds {
+	if abs == nil {
+		return nil
+	}
+	return &figma.Bounds{
+		X: abs.X - frameOriginX, Y: abs.Y - frameOriginY,
+		Width: abs.Width, Height: abs.Height,
+	}
+}
+
+// styleLayoutPositioning reads Figma's auto-layout escape hatch safely (nil
+// Styles means "no layout info", not "absolute").
+func styleLayoutPositioning(st *figma.Style) string {
+	if st == nil {
+		return ""
+	}
+	return st.LayoutPositioning
 }
 
 // tier1Diff is the deterministic core: for each Figma node aligned to a DOM
@@ -240,10 +339,21 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 		}
 	}
 
+	// Structure lint (anti-Goodhart): a DOM position:absolute inside a Figma
+	// auto-layout parent is only legitimate when Figma itself declared this
+	// node as an escape hatch (layoutPositioning=="ABSOLUTE"); otherwise the
+	// design asked for a flex child and the implementation opted out of flow
+	// on its own — flag it independent of whether pixels happen to match.
+	if ft.parentAutoLayout && ft.layoutPositioning != "ABSOLUTE" {
+		if pos := strings.TrimSpace(el.Styles["position"]); pos == "absolute" || pos == "fixed" {
+			add("position", pos, "static (Figma auto-layout child)")
+		}
+	}
+
 	if ft.typ == "TEXT" {
 		if t.Fill != "" {
 			if is, should, bad := cmpColor(el.Styles["color"], t.Fill); bad {
-				add("color", is, should)
+				add("color", is, withVariableHint(should, t.FillVariable))
 			}
 		}
 		if t.FontSize != nil {
@@ -275,7 +385,7 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 
 	if t.Fill != "" {
 		if is, should, bad := cmpColor(el.Styles["background-color"], t.Fill); bad {
-			add("background-color", is, should)
+			add("background-color", is, withVariableHint(should, t.FillVariable))
 		}
 	}
 	if t.Radius != nil {
@@ -285,7 +395,7 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 	// strokeWeight:1 even on borderless nodes, so gate on the stroke color).
 	if t.Stroke != "" {
 		if is, should, bad := cmpColor(el.Styles["border-top-color"], t.Stroke); bad {
-			add("border-color", is, should)
+			add("border-color", is, withVariableHint(should, t.StrokeVariable))
 		}
 		if t.StrokeWeight != nil {
 			cmp("border-width", el.Styles["border-top-width"], *t.StrokeWeight, tolSize)
@@ -306,10 +416,33 @@ func compareNode(ft figmaTarget, el render.DOMElement) []FieldDiff {
 	if t.Shadow && !hasShadow(el.Styles["box-shadow"]) {
 		add("box-shadow", "none", "drop shadow")
 	}
-	// Box size (containers only; text auto-sizes and would be noisy). Skip when
-	// the element is CSS-transformed: getBoundingClientRect is post-transform
-	// while computed styles are pre-transform, so the box can't be trusted.
-	if !isTransformed(el.Styles["transform"]) {
+	// Box size (containers only; text auto-sizes and would be noisy).
+	if isTransformed(el.Styles["transform"]) {
+		// getBoundingClientRect() is post-transform while our declared box
+		// (Figma node.x/y/width/height) is pre-transform — comparing them
+		// directly would be a guaranteed false diff, so a plain transform
+		// skips this check entirely, same as before. Geo-diff (opt-in, see
+		// Reconcile's geoDiff) replaces the skip with a real comparison:
+		// Figma's own post-effects renderBounds against the DOM's
+		// post-transform box. Both sides are "what actually rendered," so a
+		// mismatch here localizes a transform *composition* bug (e.g. a
+		// rotate applied around the wrong transform-origin) instead of
+		// staying invisible because the declared values still match.
+		if ft.renderBounds != nil {
+			if is, should, bad := cmpDim(el.Box.X, ft.renderBounds.X, tolBox); bad {
+				add("render-x", is, should)
+			}
+			if is, should, bad := cmpDim(el.Box.Y, ft.renderBounds.Y, tolBox); bad {
+				add("render-y", is, should)
+			}
+			if is, should, bad := cmpDim(el.Box.Width, ft.renderBounds.Width, tolBox); bad {
+				add("render-width", is, should)
+			}
+			if is, should, bad := cmpDim(el.Box.Height, ft.renderBounds.Height, tolBox); bad {
+				add("render-height", is, should)
+			}
+		}
+	} else {
 		if ft.box.Width > 0 {
 			if is, should, bad := cmpDim(el.Box.Width, ft.box.Width, tolBox); bad {
 				addAdv("width", is, should)
@@ -467,6 +600,19 @@ func canonColor(s string) (string, bool) {
 	return "", false
 }
 
+// withVariableHint appends the bound Figma Variable's name to a "should"
+// value, when one exists — a hint, not an assertion: the tool can't tell
+// from DOM computed styles whether the implementation used a literal or a
+// token (getComputedStyle always returns the resolved value either way), so
+// this only tells the agent a token is available to reach for, it doesn't
+// claim the agent's code failed to use it.
+func withVariableHint(should, variable string) string {
+	if variable == "" {
+		return should
+	}
+	return should + " (Figma Variable: " + variable + ")"
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -491,7 +637,7 @@ func (s *Service) reconcileImage(ctx context.Context, key string, frame *figma.N
 	if err != nil {
 		return Diff{}, err
 	}
-	findings, err := s.semanticDiff(ctx, key, frame, rendered)
+	findings, err := s.semanticDiff(ctx, key, frame, rendered, nil)
 	if err != nil {
 		return Diff{}, err
 	}

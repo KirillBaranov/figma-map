@@ -37,7 +37,7 @@ func TestPixelDiff_Regions(t *testing.T) {
 		}
 	}
 
-	result, err := PixelDiff(encodePNG(t, ref), encodePNG(t, got), 10, false, 2)
+	result, err := PixelDiff(encodePNG(t, ref), encodePNG(t, got), 10, false, 2, false)
 	if err != nil {
 		t.Fatalf("PixelDiff: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestPixelDiff_Regions(t *testing.T) {
 // TestPixelDiff_NoRegions covers gridSize<=0 skipping region computation.
 func TestPixelDiff_NoRegions(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	result, err := PixelDiff(encodePNG(t, img), encodePNG(t, img), 10, false, 0)
+	result, err := PixelDiff(encodePNG(t, img), encodePNG(t, img), 10, false, 0, false)
 	if err != nil {
 		t.Fatalf("PixelDiff: %v", err)
 	}
