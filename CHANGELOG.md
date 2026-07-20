@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-20
+
+### Fixed
+
+- **`bridge.log` growing unbounded for a long-lived backend.** The backend
+  is started detached (`bridge up`) and can run for days; nothing ever
+  rotated its log, so it grew to multiple gigabytes uninterrupted. The
+  backend now self-rotates via copytruncate (checks its own log size once a
+  minute; past 20MB, copies it to `bridge.log.1` and truncates the original
+  in place) — copytruncate specifically because the process holds an
+  `O_APPEND` fd to the file for its whole lifetime, and a rename-based
+  rotation would leave it writing to the renamed file forever. Rotation is
+  unconditional, not opt-in — it runs at a default path
+  (`~/.figma-map/bridge.log`, matching `bridge up`'s own path) even if
+  launched outside `bridge up`.
+
 ## [0.11.1] - 2026-07-17
 
 ### Fixed

@@ -111,6 +111,10 @@ func (s *Service) BridgeUp(ctx context.Context, repo string) (BridgeUpResult, er
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = detachAttr()
+	// The backend can run for days; it self-rotates this file via
+	// FIGMA_MAP_BRIDGE_LOG (see backend/src/logRotate.ts) since nothing
+	// external ever touches a long-lived detached process's log.
+	cmd.Env = append(os.Environ(), "FIGMA_MAP_BRIDGE_LOG="+logPath)
 
 	if err := cmd.Start(); err != nil {
 		return BridgeUpResult{}, fmt.Errorf("start backend: %w", err)

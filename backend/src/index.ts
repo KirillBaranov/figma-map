@@ -6,10 +6,13 @@ import { Election } from "./election.js";
 import { Node } from "./node.js";
 import { registerTools } from "./tools.js";
 import { VERSION } from "./version.js";
+import { startLogRotation, defaultBridgeLogPath } from "./logRotate.js";
 
 const LISTEN_PORT = 1994;
 
 async function bootstrap(): Promise<void> {
+  startLogRotation(process.env.FIGMA_MAP_BRIDGE_LOG || defaultBridgeLogPath());
+
   const node = new Node(LISTEN_PORT);
   const election = new Election(LISTEN_PORT, node);
   await election.start();
